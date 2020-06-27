@@ -8,7 +8,7 @@ import torch.optim as optim
 import torch.autograd as autograd
 from torch.utils import data
 from data_loader import DATA_LOADER as dataloader
-from data_loader import Flickr30k as dataLoader
+from dataloader import Flickr30k as dataLoader
 import final_classifier as  classifier
 import models
 from torchvision import models as torchModels
@@ -56,7 +56,7 @@ class Model(nn.Module):
         self.cross_reconstruction = hyperparameters['model_specifics']['cross_reconstruction']
         self.cls_train_epochs = hyperparameters['cls_train_steps']
         #self.dataset = dataloader(self.DATASET, copy.deepcopy(self.auxiliary_data_source) , device= 'cuda')
-        self.dataset = dataLoader(copy.deepcopy(self.auxiliary_data_source) , device= 'cuda')
+        self.dataset = dataLoader(copy.deepcopy(self.auxiliary_data_source) , device= 'cuda', attr = self.attr)
         if self.DATASET=='CUB':
             self.num_classes=200
             self.num_novel_classes = 50
@@ -143,22 +143,29 @@ class Model(nn.Module):
 
         img_from_img = self.decoder['resnet_features'](z_from_img)
         att_from_att = self.decoder[self.auxiliary_data_source](z_from_att)
-        if self.attr == 'attributes':
-            att_from_att[att_from_att < 0.5] = 0
-            att_from_att[att_from_att > 0.5] = 1
+        
+        
+        
 
         reconstruction_loss = self.reconstruction_criterion(img_from_img, img) \
                               + self.reconstruction_criterion(att_from_att, att)
+                              
+        print('Image Reconstruction Loss:')
+        print(self.reconstruction_criterion(img_from_img, img))
+        
+        print('Attributes Reconstruction Loss:')
+        print(self.reconstruction_criterion(att_from_att, att))
+    
 
         ##############################################
         # Cross Reconstruction Loss
         ##############################################
         img_from_att = self.decoder['resnet_features'](z_from_att)
         att_from_img = self.decoder[self.auxiliary_data_source](z_from_img)
-        if self.attr == 'attributes':
-            att_from_img[att_from_img < 0.5] = 0
-            att_from_img[att_from_img > 0.5] = 1
-
+        
+        
+        
+        
         cross_reconstruction_loss = self.reconstruction_criterion(img_from_att, img) \
                                     + self.reconstruction_criterion(att_from_img, att)
 
@@ -202,8 +209,8 @@ class Model(nn.Module):
 
         loss = reconstruction_loss - beta * KLD
 
-        #if cross_reconstruction_loss>0:
-        #    loss += cross_reconstruction_factor*cross_reconstruction_loss
+        if cross_reconstruction_loss>0:
+           loss += cross_reconstruction_factor*cross_reconstruction_loss
         if distance_factor >0:
            loss += distance_factor*distance
 
@@ -226,10 +233,8 @@ class Model(nn.Module):
         self.train()
         self.reparameterize_with_noise = True
         
-        metricsI1 = []
-        metricsT1 = []
-        metricsI5 = []
-        metricsT5 = []
+        metricsI = []
+        metricsT = []
         
         self.feature_extractor.to(self.device)
         
@@ -238,22 +243,16 @@ class Model(nn.Module):
             self.current_epoch = epoch
             
             i=-1
-            #for iters in range(0, len(self.dataset), self.batch_size):
-            for iters in range(0, 150, self.batch_size):
+            y = 0
+            for iters in range(0, len(self.dataset), self.batch_size):
+            
+            #for iters in range(0, 1000, self.batch_size):
                 i+=1
 
-                images, attributes, idxs = self.dataset.next_batch(self.batch_size, self.attr)
+                features, attributes, idxs = self.dataset.next_batch(self.batch_size) #Si no és test treure la y
                 
-                               
-                with torch.no_grad():
-                    features = self.feature_extractor(images) 
                 
-                new_features = torch.zeros((5*features.size()[0],features.size()[1]))
-                
-                for z in range(0,features.size()[0]):
-                    new_features[5*z:5*(z+1),:] = features[z,:].repeat(5,1)
-                
-                data_from_modalities = [new_features, attributes.type(torch.FloatTensor)]               
+                data_from_modalities = [features, attributes.type(torch.FloatTensor)]               
                 
                 
                 for j in range(len(data_from_modalities)):
@@ -268,12 +267,15 @@ class Model(nn.Module):
                     ' | loss ' +  str(loss))
 
                 if i%50==0 and i>0:
-                    losses.append(loss)
+                    losses.append(loss)                
                 
-                images = images.cpu()
                 idxs = idxs.cpu()
                 
                 attributes = attributes.cpu()
+                
+                y += 1
+                
+            y = 0
                 
             for j in range(len(data_from_modalities)):
                     data_from_modalities[j] = data_from_modalities[j].cpu()
@@ -296,27 +298,14 @@ class Model(nn.Module):
             
             print('Evaluating retrieval...')
             metricsIepoch, metricsTepoch = self.retrieval()
-            
-            
-            metricsI1.append(metricsIepoch[0])
-            metricsT1.append(metricsTepoch[0])
-            metricsI5.append(metricsIepoch[1])
-            metricsT5.append(metricsTepoch[1])
-            
-            plt.plot(metricsI1, color = 'blue')
-            plt.plot(metricsT1, color = 'red')
-            plt.plot(metricsI5, color = 'orange')
-            plt.plot(metricsT5, color = 'green')
-            filename2 = 'recalls-plot-epoch'+str(epoch)+'.png'
-            plt.savefig(filename2)
-            plt.clf()
+            metricsI.append(metricsIepoch)
+            metricsT.append(metricsTepoch)
         
             print('Evaluation Metrics for image retrieval')
             print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsIepoch[0], metricsIepoch[1], metricsIepoch[2], metricsIepoch[3], metricsIepoch[4], metricsIepoch[5], metricsIepoch[6]))
             print('Evaluation Metrics for caption retrieval')
             print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsTepoch[0], metricsTepoch[1], metricsTepoch[2], metricsTepoch[3], metricsTepoch[4], metricsTepoch[5], metricsTepoch[6]))
-            
-            
+        
                
         # turn into evaluation mode:
         for key, value in self.encoder.items():
@@ -324,56 +313,61 @@ class Model(nn.Module):
         for key, value in self.decoder.items():
             self.decoder[key].eval()
 
-        return losses
+        return losses, metricsI, metricsT
+    
     
     def retrieval(self):
-                
+        
+        def lda(self, x, y):
+            distance = torch.sqrt(torch.sum((x[0] - y[0]) ** 2, dim=1) + \
+                              torch.sum((torch.sqrt(x[1].exp()) - torch.sqrt(y[1].exp())) ** 2, dim=1))
+            
+            return distance
+        
         #nbrsI = NearestNeighbors(n_neighbors=self.dataset.ntest, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
-        nbrsI = NearestNeighbors(n_neighbors=150, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
+        nbrsI = NearestNeighbors(n_neighbors=1000, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
         #nbrsT = NearestNeighbors(n_neighbors=self.dataset.ntest, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
-        nbrsT = NearestNeighbors(n_neighbors=150, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
+        nbrsT = NearestNeighbors(n_neighbors=5000, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
         
         distI_dict = {}
         distT_dict = {}
         
-        ranksI = np.zeros((1,5*self.dataset.ntest))
-        ranksT = np.zeros((1,self.dataset.ntest))
+        ranksI = np.zeros((1,self.dataset.ntest))
+        ranksT = np.zeros((1,5*self.dataset.ntest))
         
-        #for i in range(0, self.dataset.ntest):
-        for i in range(0, 150):
+        for i in range(0, self.dataset.ntest):
+        #for i in range(0, 500):
             self.feature_extractor.to(self.device)
             
-            image, attr, idx = self.dataset.get_item(i, self.attr)
-            
-                      
-            with torch.no_grad():
-                im_ft = self.feature_extractor(image) 
+            im_ft, attr, idx = self.dataset.get_item(i)           
             
             mu_img, logvar_img = self.encoder['resnet_features'](im_ft)
             z_from_img = self.reparameterize(mu_img, logvar_img)
 
             mu_att, logvar_att = self.encoder['attributes'](attr.type(torch.FloatTensor).to(self.device))
             z_from_att = self.reparameterize(mu_att, logvar_att)
-                     
-            distancesI, indicesI = nbrsI.kneighbors(z_from_att.cpu().detach().numpy())      
-            distancesT, indicesT = nbrsT.kneighbors(z_from_img.cpu().detach().numpy())
+            
+            img = [mu_img.cpu().detach().numpy(), logvar_img.cpu().detach().numpy()]
+            att = [mu_att.cpu().detach().numpy(), logvar_att.cpu().detach().numpy()]
+            
+            distancesI, indicesI = nbrsI.kneighbors(mu_img.cpu().detach().numpy())      
+            distancesT, indicesT = nbrsT.kneighbors(mu_att.cpu().detach().numpy())
             
             distI_dict[i] = indicesI
             distT_dict[i] = indicesT
             
             
             for z in range(0,5):                   
-                if len(np.where((indicesI[z] >= 5*i) & (indicesI[z] <= (5*i+4)))[0]) != 0:
-                        ranksI[:,5*i + z] = np.where((indicesI[z] >= 5*i) & (indicesI[z] <= (5*i+4)))[0][0] 
+                if len(np.where((indicesT[z] >= 5*i) & (indicesT[z] <= (5*i+4)))[0]) != 0:
+                        ranksT[:,5*i + z] = np.where((indicesT[z] >= 5*i) & (indicesT[z] <= (5*i+4)))[0][0] 
                 else:
-                    ranksI[:,5*i + z] = 5000
+                    ranksT[:,5*i + z] = 5000
             
-            if any(map(len, np.where((indicesT[0] > (5*i-1)) & (indicesT[0] < (5*i+5))))):
-                ranksT[:,i] = np.where((indicesT > (5*i-1)) & (indicesT < (5*i+5)))[1][0]
+            if any(map(len, np.where((indicesI[0] > (5*i-1)) & (indicesI[0] < (5*i+5))))):
+                ranksI[:,i] = np.where((indicesI > (5*i-1)) & (indicesI < (5*i+5)))[1][0]
             else:
-                ranksT[:,i] = 1000
-            
-            image = image.cpu()
+                ranksI[:,i] = 1000
+                
             attr = attr.cpu()
         
         r1im = 100.0 * len(np.where(ranksI < 1)[1]) / len(ranksI[0,:])
@@ -404,25 +398,22 @@ class Model(nn.Module):
         self.feature_extractor.to(self.device)
               
         z_imgs = []
+        z_vars_im = []
         z_attrs = []
+        z_vars_att = []
         rec_imgs = []
         rec_attrs = []
         
         y = 0
         i=-1
-        #for iters in range(0, self.dataset.ntest, 50):
-        for iters in range(0, 150, 50):
+        for iters in range(0, self.dataset.ntest, 50):
+        #for iters in range(0, 500, 50):
             i+=1
             
-            images, attributes, idxs = self.dataset.next_batch_test(50, y, self.attr)
+            features, attributes, idxs = self.dataset.next_batch_test(50, y)
             idxs = idxs.cpu()
-            
-            with torch.no_grad():
-                features = self.feature_extractor(images)
                 
             data_from_modalities = [features, attributes.type(torch.FloatTensor)]
-            
-            images = images.cpu()
 
             for j in range(len(data_from_modalities)):
                 data_from_modalities[j] = data_from_modalities[j].to(self.device)
@@ -436,11 +427,15 @@ class Model(nn.Module):
                         
             
             if y == 0:
-                z_imgs = z_from_img.cpu()
-                z_attrs = z_from_att.cpu()
+                z_imgs = mu_img.cpu()
+                z_vars_im = logvar_img.cpu()
+                z_attrs = mu_att.cpu()
+                z_vars_att = logvar_att.cpu()
             else:
-                z_imgs = torch.cat((z_imgs.cpu(),z_from_img.cpu()), dim = 0).cpu()
-                z_attrs = torch.cat((z_attrs.cpu(),z_from_att.cpu()), dim = 0).cpu()
+                z_imgs = torch.cat((z_imgs.cpu(),mu_img.cpu()), dim = 0).cpu()
+                z_vars_im = torch.cat((z_vars_im.cpu(),logvar_img.cpu()), dim = 0).cpu()
+                z_attrs = torch.cat((z_attrs.cpu(),mu_att.cpu()), dim = 0).cpu()
+                z_vars_att = torch.cat((z_vars_att.cpu(),logvar_att.cpu()), dim = 0).cpu()
                 
             
             y = y + 1
@@ -449,8 +444,10 @@ class Model(nn.Module):
         
                
         self.gallery_imgs_z = z_imgs.cpu()
+        self.gallery_vars_im = z_vars_im.cpu()
         print(self.gallery_imgs_z.size())
         self.gallery_attrs_z = z_attrs.cpu()
+        self.gallery_vars_att = z_vars_att.cpu()
         print(self.gallery_attrs_z.size())
         
              

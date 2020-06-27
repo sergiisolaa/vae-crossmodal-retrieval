@@ -153,12 +153,7 @@ class Flickr30k(object):
             image = Image.open(imfile).resize((self.imagesize, self.imagesize))
             #image = torch.from_numpy(np.array(image, np.float32)).float()
             image = np.array(image, np.float32)[np.newaxis,...]
-            
-            if j == 0:
-                batch_images = image
-            else:
-                batch_images = np.asarray(batch_images)
-                batch_images = np.concatenate((batch_images, image), axis = 0)
+                
             
             sentences = self.train_sentences[self.train_imgs_id[i]]
             
@@ -167,53 +162,52 @@ class Flickr30k(object):
             sentence_embedding_ar = []
             
             if attr == 'attributes':
-                attr_vec = torch.zeros((5,self.K))
+                attr_vec = torch.zeros((1,self.K))
             elif attr == 'bert':
-                attr_vec = torch.zeros((5, 768))
+                attr_vec = torch.zeros((1, 768))
             
-            k =0
-            for sent in sentences:
-                raws = sent["raw"]
-                
-                
-                if attr == 'attributes':
-                    sent_idxs = []
-                    
-                    tokens = nltk.tokenize.word_tokenize(str(raws).lower())
-                    tokens_r = [w for w in tokens if not w in stop_words] 
-                    tokens_l = [lemmatizer.lemmatize(w) for w in tokens_r]
-                    
-                    for token in tokens_l:
-                        idxs = self.vocabulary.to_index(token)
-                        if idxs != -1:
-                            sent_idxs.append(idxs)
-                    
-                    attr_vec[k,sent_idxs] = 1
-                    
-                    if all(attr_vec[k,:] == 0):
-                        print('Attribute vector with all zeros')
-                
-                elif attr == 'bert':
-                    input_ids = self.tokenizer.encode(str(raws).lower(), add_special_tokens = True)
-                    segments_ids = [1] * len(input_ids)
-                
-                    tokens_tensor = torch.tensor([input_ids]).to(self.device)
-                    segments_tensors = torch.tensor([segments_ids]).to(self.device)
-                
-                    with torch.no_grad():
-                        outputs = self.bert(tokens_tensor, segments_tensors)
-                    
-                    hidden_states = outputs[2]
-                    token_vecs = hidden_states[-2][0]
-                    sentence_embedding = torch.mean(token_vecs, dim=0)
-                    attr_vec[k,:] = sentence_embedding
-                    
-                k = k + 1
+            sentix = np.random.randint(5)
             
-                          
+            sent = sentences[sentix]
+            raws = sent["raw"]
+                
+            if attr == 'attributes':
+                sent_idxs = []
+                    
+                tokens = nltk.tokenize.word_tokenize(str(raws).lower())
+                tokens_r = [w for w in tokens if not w in stop_words] 
+                tokens_l = [lemmatizer.lemmatize(w) for w in tokens_r]
+                    
+                for token in tokens_l:
+                    idxs = self.vocabulary.to_index(token)
+                    if idxs != -1:
+                        sent_idxs.append(idxs)
+                    
+                    attr_vec[:,sent_idxs] = 1
+                    
+                if all(attr_vec[0,:] == 0):
+                    print('Attribute vector with all zeros')
+                    continue
+                
+            elif attr == 'bert':
+                input_ids = self.tokenizer.encode(str(raws).lower(), add_special_tokens = True)
+                segments_ids = [1] * len(input_ids)
+                
+                tokens_tensor = torch.tensor([input_ids]).to(self.device)
+                segments_tensors = torch.tensor([segments_ids]).to(self.device)
+                
+                with torch.no_grad():
+                    outputs = self.bert(tokens_tensor, segments_tensors)
+                    
+                hidden_states = outputs[2]
+                token_vecs = hidden_states[-2][0]
+                sentence_embedding = torch.mean(token_vecs, dim=0)
+                attr_vec[0,:] = sentence_embedding
+                    
             
             if j == 0:
                 batch_att = attr_vec
+                batch_images = image
                 #batch_captions = np.asarray(raws_r)
                 #batch_captions = batch_captions[np.newaxis,...]
             else:
@@ -221,6 +215,8 @@ class Flickr30k(object):
                 #raws_r = np.asarray(raws_r)
                 #print(attr_vec.shape)
                 batch_att = np.concatenate((batch_att,attr_vec), axis = 0)
+                batch_images = np.asarray(batch_images)
+                batch_images = np.concatenate((batch_images, image), axis = 0)
                 #print(batch_att.shape)
                 #print(raws_r)
                 #batch_captions = np.concatenate((batch_captions,raws_r[np.newaxis,...]), axis = 0)   

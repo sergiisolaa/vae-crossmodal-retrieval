@@ -36,17 +36,17 @@ hyperparameters = {
     'model_specifics': {'cross_reconstruction': True,
                        'name': 'CADA',
                        'distance': 'wasserstein',
-                       'warmup': {'beta': {'factor': 0.25,#0.25
+                       'warmup': {'beta': {'factor': 0.0001,#0.25
                                            'end_epoch': 93, #93
                                            'start_epoch': 0},
-                                  'cross_reconstruction': {'factor': 2.37,
+                                  'cross_reconstruction': {'factor': 0,
                                                            'end_epoch': 75,#75
                                                            'start_epoch': 21},#21
-                                  'distance': {'factor': 8.13, #8.13
+                                  'distance': {'factor': 0, #8.13
                                                'end_epoch': 22,#22
                                                'start_epoch': 6}}},#6
 
-    'lr_gen_model': 0.000001,
+    'lr_gen_model': 0.000005,
     'generalized': True,
     'batch_size': 50 ,
     'xyu_samples_per_class': {'SUN': (200, 0, 400, 0),
@@ -58,13 +58,13 @@ hyperparameters = {
     'epochs': 100,
     'loss': 'l1',
     'auxiliary_data_source' : 'attributes',
-    'attr': 'attributes',
+    'attr': 'bert',
     'lr_cls': 0.001,
     'dataset': 'CUB',
     'hidden_size_rule': {'resnet_features': (1560, 1660),
                         'attributes': (1450, 665),
                         'sentences': (1450, 665) },
-    'latent_size': 64
+    'latent_size': 16
 }
 
 # The training epochs for the final classifier, for early stopping,
@@ -173,15 +173,11 @@ for d in model.all_data_sources_without_duplicates:
 """
 
 
-losses = model.train_vae()
+losses, metricsI, metricsT = model.train_vae()
 
 model.generate_gallery()
 
 metricsI, metricsT = model.retrieval()
-
-zero_att_num = model.dataset.getZero()
-
-print('Number of attribute vectors that are all zeros: {}'.format(zero_att_num))
 
 #Printar metrics
 print('Evaluation Metrics for image retrieval')
