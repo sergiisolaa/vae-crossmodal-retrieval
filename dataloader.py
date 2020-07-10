@@ -137,13 +137,10 @@ class Flickr30k(object):
     def get_item(self, idx):
         
         image = self.fts_test[0][idx,:]
-        print(image.shape)
         image = image.unsqueeze(0)
-        print(image.shape)
         
         ida = 5*idx
         attrs = self.attrs_test[0][ida:ida + 5,:]
-        print(image.shape)
         
         return image, attrs, idx
     

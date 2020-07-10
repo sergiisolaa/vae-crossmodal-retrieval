@@ -148,14 +148,7 @@ class Model(nn.Module):
         
 
         reconstruction_loss = self.reconstruction_criterion(img_from_img, img) \
-                              + self.reconstruction_criterion(att_from_att, att)
-                              
-        print('Image Reconstruction Loss:')
-        print(self.reconstruction_criterion(img_from_img, img))
-        
-        print('Attributes Reconstruction Loss:')
-        print(self.reconstruction_criterion(att_from_att, att))
-    
+                              + self.reconstruction_criterion(att_from_att, att)    
 
         ##############################################
         # Cross Reconstruction Loss
@@ -332,8 +325,8 @@ class Model(nn.Module):
         distI_dict = {}
         distT_dict = {}
         
-        ranksI = np.zeros((1,self.dataset.ntest))
-        ranksT = np.zeros((1,5*self.dataset.ntest))
+        ranksI = np.zeros((1,5*self.dataset.ntest))
+        ranksT = np.zeros((1,self.dataset.ntest))
         
         for i in range(0, self.dataset.ntest):
         #for i in range(0, 500):
@@ -350,24 +343,50 @@ class Model(nn.Module):
             img = [mu_img.cpu().detach().numpy(), logvar_img.cpu().detach().numpy()]
             att = [mu_att.cpu().detach().numpy(), logvar_att.cpu().detach().numpy()]
             
-            distancesI, indicesI = nbrsI.kneighbors(mu_img.cpu().detach().numpy())      
-            distancesT, indicesT = nbrsT.kneighbors(mu_att.cpu().detach().numpy())
+            distancesI, indicesI = nbrsI.kneighbors(z_from_att.cpu().detach().numpy())      
+            distancesT, indicesT = nbrsT.kneighbors(z_from_img.cpu().detach().numpy())
             
             distI_dict[i] = indicesI
             distT_dict[i] = indicesT
             
+            for z in range(0,5):
+                if len(indicesI[z] == i) != 0:
+                    ranksI[:,(5*i) + z] = np.where(indicesI[z] == i)[0][0]
+                else:
+                    ranksI[:,(5*i) + z] = 1000
             
+            
+            if len(np.where((indicesT[0] >= 5*i) & (indicesT[0] <= ((5*i) + 4)))) != 0:
+                ranksT[:,i] = np.where((indicesT[0] >= 5*i) & (indicesT[0] <= ((5*i) + 4)))[0][0]
+            else:
+                ranksT[:,i] = 1000
+            
+            '''
+            for z in range(0,5):                   
+                if len(np.where((indicesI[z] >= 5*i) & (indicesI[z] <= (5*i+4)))[0]) != 0:
+                        ranksI[:,5*i + z] = np.where((indicesI[z] >= 5*i) & (indicesI[z] <= (5*i+4)))[0][0] 
+                else:
+                    ranksI[:,5*i + z] = 5000
+            
+            if len(np.where((indicesT[0] > (5*i-1)) & (indicesT[0] < (5*i+5)))) != 0:
+                ranksT[:,i] = np.where((indicesT[0] > (5*i-1)) & (indicesT[0] < (5*i+5)))[0][0]
+            else:
+                ranksT[:,i] = 1000
+            
+            '''
+            '''
             for z in range(0,5):                   
                 if len(np.where((indicesT[z] >= 5*i) & (indicesT[z] <= (5*i+4)))[0]) != 0:
                         ranksT[:,5*i + z] = np.where((indicesT[z] >= 5*i) & (indicesT[z] <= (5*i+4)))[0][0] 
                 else:
                     ranksT[:,5*i + z] = 5000
             
-            if any(map(len, np.where((indicesI[0] > (5*i-1)) & (indicesI[0] < (5*i+5))))):
-                ranksI[:,i] = np.where((indicesI > (5*i-1)) & (indicesI < (5*i+5)))[1][0]
+            if len(np.where(indicesI[0] == i)) != 0:
+                ranksI[:,i] = np.where(indicesI[0] == i)[0][0]
             else:
                 ranksI[:,i] = 1000
-                
+            
+            '''            
             attr = attr.cpu()
         
         r1im = 100.0 * len(np.where(ranksI < 1)[1]) / len(ranksI[0,:])
@@ -427,14 +446,14 @@ class Model(nn.Module):
                         
             
             if y == 0:
-                z_imgs = mu_img.cpu()
+                z_imgs = z_from_img.cpu()
                 z_vars_im = logvar_img.cpu()
-                z_attrs = mu_att.cpu()
+                z_attrs = z_from_att.cpu()
                 z_vars_att = logvar_att.cpu()
             else:
-                z_imgs = torch.cat((z_imgs.cpu(),mu_img.cpu()), dim = 0).cpu()
+                z_imgs = torch.cat((z_imgs.cpu(),z_from_img.cpu()), dim = 0).cpu()
                 z_vars_im = torch.cat((z_vars_im.cpu(),logvar_img.cpu()), dim = 0).cpu()
-                z_attrs = torch.cat((z_attrs.cpu(),mu_att.cpu()), dim = 0).cpu()
+                z_attrs = torch.cat((z_attrs.cpu(),z_from_att.cpu()), dim = 0).cpu()
                 z_vars_att = torch.cat((z_vars_att.cpu(),logvar_att.cpu()), dim = 0).cpu()
                 
             
