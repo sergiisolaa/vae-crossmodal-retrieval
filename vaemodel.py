@@ -70,14 +70,15 @@ class Model(nn.Module):
         if self.attr == 'attributes':
             feature_dimensions = [2048, self.dataset.K]
         elif self.attr == 'bert':
-            feature_dimensions = [2048, 768]
+            feature_dimensions = [4096, 4096] #2048, 768
 
         # Here, the encoders and decoders for all modalities are created and put into dict
         
-        self.feature_extractor = torchModels.resnet101(pretrained = True)
+        self.fc_ft = nn.Linear(2048,4096)
+        self.fc_ft.to(self.device)
         
-        num_ftrs = self.feature_extractor.fc.in_features
-        self.feature_extractor.fc = nn.Linear(num_ftrs, 2048)
+        self.fc_at = nn.Linear(768, 4096)
+        self.fc_at.to(self.device)
 
         self.encoder = {}
 
@@ -96,7 +97,10 @@ class Model(nn.Module):
         for datatype in self.all_data_sources:
             parameters_to_optimize +=  list(self.encoder[datatype].parameters())
             parameters_to_optimize +=  list(self.decoder[datatype].parameters())
-
+        parameters_to_optimize += list(self.fc_ft.parameters())
+        parameters_to_optimize += list(self.fc_at.parameters())
+        
+        
         self.optimizer  = optim.Adam( parameters_to_optimize ,lr=hyperparameters['lr_gen_model'], betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=True)
 
         if self.reco_loss_function=='l2':
@@ -125,12 +129,16 @@ class Model(nn.Module):
         return mapped_label
     
     def trainstep(self, img, att):
-
+        
+        
         ##############################################
         # Encode image features and additional
         # features
         ##############################################
-
+        
+        img = self.fc_ft(img)
+        att = self.fc_at(att)
+        
         mu_img, logvar_img = self.encoder['resnet_features'](img)
         z_from_img = self.reparameterize(mu_img, logvar_img)
 
@@ -211,11 +219,15 @@ class Model(nn.Module):
 
         self.optimizer.step()
 
-        return loss.item()
+        return loss.item(), reconstruction_loss, beta*KLD, cross_reconstruction_factor*cross_reconstruction_loss, distance_factor*distance
 
     def train_vae(self):
 
-        losses = []
+        elosses = []
+        lossesR = []
+        lossesK = []
+        lossesC = []
+        lossesD = []
 
         self.dataloader = data.DataLoader(self.dataset,batch_size=self.batch_size,shuffle= True,drop_last=True)#,num_workers = 4)
 
@@ -224,16 +236,23 @@ class Model(nn.Module):
         
         #leave both statements
         self.train()
+        self.fc_ft.train()
+        self.fc_at.train()
         self.reparameterize_with_noise = True
         
         metricsI = []
         metricsT = []
         
-        self.feature_extractor.to(self.device)
         
         print('train for reconstruction')
         for epoch in range(0, self.nepoch ):
             self.current_epoch = epoch
+            
+            losses = []
+            ilossesR = []
+            ilossesK = []
+            ilossesC = []
+            ilossesD = []
             
             i=-1
             y = 0
@@ -252,15 +271,18 @@ class Model(nn.Module):
                     data_from_modalities[j] = data_from_modalities[j].to(self.device)
                     data_from_modalities[j].requires_grad = False
 
-                loss = self.trainstep(data_from_modalities[0], data_from_modalities[1] )
+                loss, lossR, lossK, lossC, lossD = self.trainstep(data_from_modalities[0], data_from_modalities[1] )
 
                 if i%10==0:
 
                     print('epoch ' + str(epoch) + ' | iter ' + str(i) + '\t'+
                     ' | loss ' +  str(loss))
 
-                if i%50==0 and i>0:
-                    losses.append(loss)                
+                losses.append(loss)                
+                ilossesR.append(lossR)
+                ilossesK.append(lossK)
+                ilossesC.append(lossC)
+                ilossesD.append(lossD)
                 
                 idxs = idxs.cpu()
                 
@@ -269,10 +291,18 @@ class Model(nn.Module):
                 y += 1
                 
             y = 0
-                
+            
+            mean_loss = sum(losses)/len(losses)            
+            elosses.append(mean_loss)
+            print('epoch ' + str(epoch) + 'Loss: ' + str(loss))
+            
+            lossesR.append(sum(ilossesR)/len(ilossesR))
+            lossesK.append(sum(ilossesK)/len(ilossesK))
+            lossesC.append(sum(ilossesC)/len(ilossesC))
+            lossesD.append(sum(ilossesD)/len(ilossesD))
+            
             for j in range(len(data_from_modalities)):
                     data_from_modalities[j] = data_from_modalities[j].cpu()
-            
             
             print('Generating gallery set...')
             self.generate_gallery()
@@ -305,7 +335,31 @@ class Model(nn.Module):
             self.encoder[key].eval()
         for key, value in self.decoder.items():
             self.decoder[key].eval()
-
+        
+        
+        #Plot de les losses i desar-lo
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.plot(np.arange(self.nepoch), elosses)
+        plt.plot(np.arange(self.nepoch), lossesR)
+        plt.plot(np.arange(self.nepoch), lossesK)
+        plt.plot(np.arange(self.nepoch), lossesC)
+        plt.plot(np.arange(self.nepoch), lossesD)
+        plt.legend()
+        plt.show()
+        plt.savefig('losses.png')
+        plt.clf()
+        
+        #Plot de les metrics
+        plt.xlabel('Epoch')
+        plt.ylabel('Metric')
+        plt.plot(np.arange(self.nepoch), metricsI)
+        plt.plot(np.arange(self.nepoch), metricsT)
+        plt.legend()
+        plt.show()
+        plt.savefig('metrics.png')
+        plt.clf()
+                
         return losses, metricsI, metricsT
     
     
@@ -330,9 +384,11 @@ class Model(nn.Module):
         
         for i in range(0, self.dataset.ntest):
         #for i in range(0, 500):
-            self.feature_extractor.to(self.device)
             
-            im_ft, attr, idx = self.dataset.get_item(i)           
+            im_ft, attr, idx = self.dataset.get_item(i)   
+            
+            im_ft = self.fc_ft(im_ft)
+            attr = self.fc_at(attr.type(torch.FloatTensor).to(self.device))
             
             mu_img, logvar_img = self.encoder['resnet_features'](im_ft)
             z_from_img = self.reparameterize(mu_img, logvar_img)
@@ -414,8 +470,6 @@ class Model(nn.Module):
         
     def generate_gallery(self):
               
-        self.feature_extractor.to(self.device)
-              
         z_imgs = []
         z_vars_im = []
         z_attrs = []
@@ -431,12 +485,18 @@ class Model(nn.Module):
             
             features, attributes, idxs = self.dataset.next_batch_test(50, y)
             idxs = idxs.cpu()
-                
+              
+            
             data_from_modalities = [features, attributes.type(torch.FloatTensor)]
 
             for j in range(len(data_from_modalities)):
                 data_from_modalities[j] = data_from_modalities[j].to(self.device)
                 data_from_modalities[j].requires_grad = False
+                if j== 0:
+                    print(j)
+                    data_from_modalities[j] = self.fc_ft(data_from_modalities[j])
+                elif j == 1: 
+                    data_from_modalities[j] = self.fc_at(data_from_modalities[j])
             
             mu_img, logvar_img = self.encoder['resnet_features'](data_from_modalities[0])
             z_from_img = self.reparameterize(mu_img, logvar_img)

@@ -58,10 +58,17 @@ transforms = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 
+class Identity(nn.Module):
+    def __init__(self):
+        super(Identity, self).__init__()
+        
+    def forward(self, x):
+        return x
+    
 feature_extractor = torchModels.resnet101(pretrained = True)
         
 num_ftrs = feature_extractor.fc.in_features
-feature_extractor.fc = nn.Linear(num_ftrs, 2048)
+feature_extractor.fc = Identity()
 feature_extractor.to(device)
         
 train_imgs = []

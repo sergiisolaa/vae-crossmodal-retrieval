@@ -43,12 +43,12 @@ hyperparameters = {
                                                            'end_epoch': 75,#75
                                                            'start_epoch': 21},#21
                                   'distance': {'factor': 10, #8.13
-                                               'end_epoch': 22,#22
-                                               'start_epoch': 6}}},#6
+                                               'end_epoch': 25,#22
+                                               'start_epoch': 10}}},#6
 
     'lr_gen_model': 0.00005,
     'generalized': True,
-    'batch_size': 50 ,
+    'batch_size': 50,
     'xyu_samples_per_class': {'SUN': (200, 0, 400, 0),
                               'APY': (200, 0, 400, 0),
                               'CUB': (200, 0, 400, 0),
@@ -58,7 +58,7 @@ hyperparameters = {
     'epochs': 100,
     'loss': 'l1',
     'auxiliary_data_source' : 'attributes',
-    'attr': 'attributes',
+    'attr': 'bert',
     'lr_cls': 0.001,
     'dataset': 'CUB',
     'hidden_size_rule': {'resnet_features': (1560, 1660),
