@@ -224,8 +224,8 @@ class Model(nn.Module):
                     
                         
         
-        tripletI2t = sum(tripletsI)
-        tripletT2i = sum(tripletsT)
+        tripletI2t = sum(tripletsI)/len(tripletsI)
+        tripletT2i = sum(tripletsT)/len(tripletsT)
         
         distance = tripletI2t + tripletT2i
         

@@ -14,6 +14,7 @@ import models
 from torchvision import models as torchModels
 from sklearn.neighbors import NearestNeighbors
 from sklearn.manifold import TSNE
+from scipy.spatial import distance
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -196,40 +197,40 @@ class Model(nn.Module):
         ##############################################
         # Distribution Alignment
         ##############################################
-        #distance = torch.sqrt(torch.sum((mu_img - mu_att) ** 2, dim=1) + \
-        #                      torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
+        distance = torch.sqrt(torch.sum((mu_img - mu_att) ** 2, dim=1) + \
+                              torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
 
-        #distance = distance.sum()
+        distance = distance.sum()
               
-        distanceI = torch.sum((mu_img - mu_att) ** 2, dim=1) 
-        distanceT = torch.sum((mu_att - mu_img) ** 2, dim=1)
+        #distanceI = torch.sum((mu_img - mu_att) ** 2, dim=1) 
+        #distanceT = torch.sum((mu_att - mu_img) ** 2, dim=1)
         
-        tripletsI = []
-        tripletsT = []
+        #tripletsI = []
+        #tripletsT = []
         
-        for i in range(0, mu_img.shape[0]):
-            for j in range(0, mu_img.shape[0]):
-                if i != j:
-                    distI = distanceI[i] - torch.sum((mu_img[i] - mu_att[j]) ** 2) + self.margin
-                    distI = torch.max(torch.FloatTensor([0]), distI)
-                    distI += torch.sum((torch.sqrt(logvar_img[i].exp()) - torch.sqrt(logvar_att[i].exp())) ** 2, dim=0)
-                    distI = torch.sqrt(distI)
-                    tripletsI.append(distI)
+        #for i in range(0, mu_img.shape[0]):
+        #    for j in range(0, mu_img.shape[0]):
+        #        if i != j:
+        #            distI = distanceI[i] - torch.sum((mu_img[i] - mu_att[j]) ** 2) + self.margin
+        #            distI = torch.max(torch.FloatTensor([0]), distI)
+        #            distI += torch.sum((torch.sqrt(logvar_img[i].exp()) - torch.sqrt(logvar_att[i].exp())) ** 2, dim=0)
+        #            distI = torch.sqrt(distI)
+        #            tripletsI.append(distI)
                     
-                    distT = distanceT[i] - torch.sum((mu_att[i] - mu_img[j]) ** 2) + self.margin
-                    distT = torch.max(torch.FloatTensor([0]), distT)
-                    distT += torch.sum((torch.sqrt(logvar_att[i].exp()) - torch.sqrt(logvar_img[i].exp())) ** 2, dim=0)
-                    distT = torch.sqrt(distT)
-                    tripletsT.append(distT)
+        #            distT = distanceT[i] - torch.sum((mu_att[i] - mu_img[j]) ** 2) + self.margin
+        #            distT = torch.max(torch.FloatTensor([0]), distT)
+        #            distT += torch.sum((torch.sqrt(logvar_att[i].exp()) - torch.sqrt(logvar_img[i].exp())) ** 2, dim=0)
+        #            distT = torch.sqrt(distT)
+        #            tripletsT.append(distT)
                     
                         
         
-        tripletI2t = sum(tripletsI)
-        tripletT2i = sum(tripletsT)
+        #tripletI2t = sum(tripletsI)
+        #tripletT2i = sum(tripletsT)
         
-        distance = tripletI2t + tripletT2i
+        #distance = tripletI2t + tripletT2i
         
-        distance = torch.FloatTensor([distance]).to(self.device)
+        #distance = torch.FloatTensor([distance]).to(self.device)
 
         ##############################################
         # scale the loss terms according to the warmup
@@ -421,10 +422,11 @@ class Model(nn.Module):
             
             return distance
         
+        
         #nbrsI = NearestNeighbors(n_neighbors=self.dataset.ntest, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
-        nbrsI = NearestNeighbors(n_neighbors=1000, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
+        #nbrsI = NearestNeighbors(n_neighbors=1000, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
         #nbrsT = NearestNeighbors(n_neighbors=self.dataset.ntest, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
-        nbrsT = NearestNeighbors(n_neighbors=5000, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
+        #nbrsT = NearestNeighbors(n_neighbors=5000, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
         
         distI_dict = {}
         distT_dict = {}
@@ -459,11 +461,16 @@ class Model(nn.Module):
             #img = [mu_img.cpu().detach().numpy(), logvar_img.cpu().detach().numpy()]
             #att = [mu_att.cpu().detach().numpy(), logvar_att.cpu().detach().numpy()]
             
-            distancesI, indicesI = nbrsI.kneighbors(mu_att.cpu().detach().numpy())      
-            distancesT, indicesT = nbrsT.kneighbors(mu_img.cpu().detach().numpy())
+            #distancesI, indicesI = nbrsI.kneighbors(mu_att.cpu().detach().numpy())      
+            #distancesT, indicesT = nbrsT.kneighbors(mu_img.cpu().detach().numpy())
             
-            distI_dict[i] = indicesI
-            distT_dict[i] = indicesT
+            distancesI = distance.cdist(mu_att.cpu().detach().numpy(), self.gallery_imgs_z.cpu().detach().numpy(), 'correlation')
+            distancesT = distance.cdist(mu_img.cpu().detach().numpy(), self.gallery_attrs_z.cpu().detach().numpy(), 'correlation')
+            
+            indicesI = np.argsort(distancesI)
+            indicesT = np.argsort(distancesT[0,:])
+            
+            #Trobar l'índex de la distància mínima entre cada parella. 
             
             for z in range(0,5):
                 if len(indicesI[z] == i) != 0:
@@ -472,8 +479,8 @@ class Model(nn.Module):
                     ranksI[:,(5*i) + z] = 1000
             
             
-            if len(np.where((indicesT[0] >= 5*i) & (indicesT[0] <= ((5*i) + 4)))) != 0:
-                ranksT[:,i] = np.where((indicesT[0] >= 5*i) & (indicesT[0] <= ((5*i) + 4)))[0][0]
+            if len(np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))) != 0:
+                ranksT[:,i] = np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))[0][0]
             else:
                 ranksT[:,i] = 1000
             

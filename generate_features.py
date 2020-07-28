@@ -51,7 +51,7 @@ epochs_completed = 0
 #self.K = 50
 T = 150
         
-attr = 'bert'
+attr = 'attributes'
         
 transforms = transforms.Compose([ 
         transforms.Resize(imagesize),   

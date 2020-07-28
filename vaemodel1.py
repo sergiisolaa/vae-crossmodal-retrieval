@@ -186,29 +186,37 @@ class Model(nn.Module):
         # Distribution Alignment
         ##############################################
               
-        #CONVERTIR A TRIPLET LOSS:
-        #Les variances es queden sense canvis
-        #Diferències entre les means del positiu i la suma de la diferencia amb els negatius més un marge.
-        distance = torch.sum((mu_img - mu_att) ** 2, dim=1)      
-        negsum = torch.zeros(mu_img.shape[0]).to(self.device)
+        
+        distance = torch.sum((mu_img - mu_att) ** 2, dim=1) 
+        distanceT = torch.sum((mu_att - mu_img) ** 2, dim=1)
+        
+        tripletsI = []
+        tripletsT = []
         
         for i in range(0, mu_img.shape[0]):
-            m = []
             for j in range(0, mu_img.shape[0]):
                 if i != j:
-                    m.append(torch.sum((mu_img[i] - mu_att[j]) ** 2))
-            
-            m = torch.FloatTensor(m).to(self.device)
-            negsum[i] = torch.mean(m) + self.margin
+                    distI = distance[i,:] - torch.sum((mu_img[i] - mu_att[j]) ** 2) + self.margin
+                    distI = torch.max(torch.FloatTensor([0]).expand_as(distI), distI)
+                    distI += torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1)
+                    distI = torch.sqrt(distI)
+                    tripletsI.append(distI)
+                    
+                    distT = distanceT[i,:] - torch.sum((mu_att[i] - mu_img[j]) ** 2) + self.margin
+                    distT = torch.max(torch.FloatTensor([0]).expand_as(distT), distT)
+                    distT += torch.sum((torch.sqrt(logvar_att.exp()) - torch.sqrt(logvar_img.exp())) ** 2, dim=1)
+                    distT = torch.sqrt(distT)
+                    tripletsT.append(distT)
+                    
+                        
         
-        negsum.to(self.device)
+        tripletI2t = sum(tripletsI)
+        tripletT2i = sum(tripletsT)
         
-        distance = distance - negsum
+        distance = tripletI2t + tripletT2i
         
-        distance += torch.sum((torch.sqrt(logvar_img.exp()+ 1e-8) - torch.sqrt(logvar_att.exp() + 1e-8)) ** 2, dim=1) 
-        distance = torch.sqrt(distance + 1e-8)
-        distance = distance.sum()
-
+        distance = torch.FloatTensor([distance]).to(self.device)
+                    
         ##############################################
         # scale the loss terms according to the warmup
         # schedule

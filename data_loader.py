@@ -230,6 +230,9 @@ class Flickr30k(object):
         batch_images = batch_images.permute(0,3,1,2)
         batch_att = torch.from_numpy(batch_att)
         
+        print(batch_images.size())
+        print(batch_att.size())
+        
         
         return batch_images.to(self.device), batch_att.to(self.device), idx.to(self.device)
     

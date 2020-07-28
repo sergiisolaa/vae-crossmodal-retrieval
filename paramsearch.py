@@ -1,14 +1,13 @@
 
 ### execute this function to train and test the vae-model
 
-from vaemodelCDist import Model
+from vaemodel import Model
 import numpy as np
 import pickle
 import torch
 import os
 import argparse
 
-#torch.autograd.set_detect_anomaly(True)
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -18,7 +17,7 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-torch.cuda.empty_cache()
+
 
 parser = argparse.ArgumentParser()
 
@@ -40,15 +39,14 @@ hyperparameters = {
                        'warmup': {'beta': {'factor': 0.01,#0.25
                                            'end_epoch': 93, #93
                                            'start_epoch': 0},
-                                  'cross_reconstruction': {'factor':1,#2.71
+                                  'cross_reconstruction': {'factor':0,#2.71
                                                            'end_epoch': 75,#75
                                                            'start_epoch': 21},#21
-                                  'distance': {'factor': 5, #8.13
-                                               'end_epoch': 22,#22
-                                               'start_epoch': 6}}},#6
+                                  'distance': {'factor': 8.13, #8.13
+                                               'end_epoch': 25,#22
+                                               'start_epoch': 10}}},#6
 
     'lr_gen_model': 0.0001,
-    'clipping': 1,
     'generalized': True,
     'batch_size': 25,
     'xyu_samples_per_class': {'SUN': (200, 0, 400, 0),
@@ -58,8 +56,7 @@ hyperparameters = {
                               'FLO': (200, 0, 400, 0),
                               'AWA1': (200, 0, 400, 0)},
     'epochs': 100,
-    'loss': 'l2',
-    'margin_loss': 2,
+    'loss': 'l1',
     'auxiliary_data_source' : 'attributes',
     'attr': 'bert',
     'lr_cls': 0.001,
@@ -67,7 +64,8 @@ hyperparameters = {
     'hidden_size_rule': {'resnet_features': (1560, 1660),
                         'attributes': (1450, 665),
                         'sentences': (1450, 665) },
-    'latent_size': 64
+    'latent_size': 64,
+    'margin_loss': 2
 }
 
 # The training epochs for the final classifier, for early stopping,
@@ -160,8 +158,7 @@ else:
                                                     'AWA2': (0, 0, 200, 200), 'FLO': (0, 0, 200, 200)}
 
 
-model = Model( hyperparameters)
-model.to(hyperparameters['device'])
+
 
 """
 ########################################
@@ -175,19 +172,33 @@ for d in model.all_data_sources_without_duplicates:
 ########################################
 """
 
+hyperparameters['attr'] = 'attributes' #Bert
+hyperparameters['loss'] = 'l1' #l2
+hyperparameters['lr_gen_model'] = 0.0001 #0.00005
+hyperparameters['model_specifics']['warmup']['beta']['factor'] = 0.0001
+hyperparameters['latent_size'] = 128
 
-losses, metricsI, metricsT = model.train_vae()
-
-model.generate_gallery()
-
-metricsI, metricsT = model.retrieval()
-
-#Printar metrics
-print('Evaluation Metrics for image retrieval')
-print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
-print('Evaluation Metrics for caption retrieval')
-print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
-        
+for i in [8.13, 4, 2, 1, 10, 12, 16, 20, 0.5, 0.2]:
+    
+    hyperparameters['model_specifics']['warmup']['distance']['factor'] = i
+               
+    torch.cuda.empty_cache()
+                        
+    model = Model( hyperparameters)
+    model.to(hyperparameters['device'])
+                        
+    losses, metricsI, metricsT = model.train_vae()
+    
+    model.generate_gallery()
+    
+    metricsI, metricsT = model.retrieval()    
+    
+    #Printar metrics
+    print('Evaluation Metrics for image retrieval')
+    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
+    print('Evaluation Metrics for caption retrieval')
+    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
+                                
 
 
 state = {

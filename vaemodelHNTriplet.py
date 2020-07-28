@@ -204,10 +204,12 @@ class Model(nn.Module):
         distanceI = torch.sum((mu_img - mu_att) ** 2, dim=1) 
         distanceT = torch.sum((mu_att - mu_img) ** 2, dim=1)
         
-        tripletsI = []
-        tripletsT = []
+        tripletsHNI = []
+        tripletsHNT = []
         
         for i in range(0, mu_img.shape[0]):
+            tripletsI = []
+            tripletsT = []
             for j in range(0, mu_img.shape[0]):
                 if i != j:
                     distI = distanceI[i] - torch.sum((mu_img[i] - mu_att[j]) ** 2) + self.margin
@@ -221,11 +223,13 @@ class Model(nn.Module):
                     distT += torch.sum((torch.sqrt(logvar_att[i].exp()) - torch.sqrt(logvar_img[i].exp())) ** 2, dim=0)
                     distT = torch.sqrt(distT)
                     tripletsT.append(distT)
-                    
+            
+            tripletsHNI.append(min(tripletsI))
+            tripletsHNT.append(min(tripletsT))
                         
         
-        tripletI2t = sum(tripletsI)
-        tripletT2i = sum(tripletsT)
+        tripletI2t = sum(tripletsHNI)
+        tripletT2i = sum(tripletsHNT)
         
         distance = tripletI2t + tripletT2i
         
