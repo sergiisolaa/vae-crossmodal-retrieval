@@ -1,7 +1,7 @@
 
 ### execute this function to train and test the vae-model
 
-from vaemodel import Model
+from vaemodelHNTriplet import Model
 import numpy as np
 import pickle
 import torch
@@ -48,7 +48,7 @@ hyperparameters = {
 
     'lr_gen_model': 0.0001,
     'generalized': True,
-    'batch_size': 25,
+    'batch_size': 20,
     'xyu_samples_per_class': {'SUN': (200, 0, 400, 0),
                               'APY': (200, 0, 400, 0),
                               'CUB': (200, 0, 400, 0),
@@ -176,29 +176,34 @@ hyperparameters['attr'] = 'attributes' #Bert
 hyperparameters['loss'] = 'l1' #l2
 hyperparameters['lr_gen_model'] = 0.0001 #0.00005
 hyperparameters['model_specifics']['warmup']['beta']['factor'] = 0.0001
-hyperparameters['latent_size'] = 128
+hyperparameters['latent_size'] = 64
 
-for i in [8.13, 4, 2, 1, 10, 12, 16, 20, 0.5, 0.2]:
+for b in [30, 0.0001]:
+    for d in [10, 50]:
+        for cr in [0.5, 1, 2]:
+
     
-    hyperparameters['model_specifics']['warmup']['distance']['factor'] = i
-               
-    torch.cuda.empty_cache()
-                        
-    model = Model( hyperparameters)
-    model.to(hyperparameters['device'])
-                        
-    losses, metricsI, metricsT = model.train_vae()
-    
-    model.generate_gallery()
-    
-    metricsI, metricsT = model.retrieval()    
-    
-    #Printar metrics
-    print('Evaluation Metrics for image retrieval')
-    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
-    print('Evaluation Metrics for caption retrieval')
-    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
+            hyperparameters['model_specifics']['warmup']['distance']['factor'] = d
+            hyperparameters['model_specifics']['warmup']['beta']['factor'] = b
+            hyperparameters['model_specifics']['warmup']['cross_reconstruction']['factor'] = cr
+                       
+            torch.cuda.empty_cache()
                                 
+            model = Model( hyperparameters)
+            model.to(hyperparameters['device'])
+                                
+            losses, metricsI, metricsT = model.train_vae()
+            
+            model.generate_gallery()
+            
+            metricsI, metricsT = model.retrieval()    
+            
+            #Printar metrics
+            print('Evaluation Metrics for image retrieval')
+            print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
+            print('Evaluation Metrics for caption retrieval')
+            print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
+                                        
 
 
 state = {

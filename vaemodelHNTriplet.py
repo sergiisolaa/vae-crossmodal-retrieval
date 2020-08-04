@@ -14,6 +14,7 @@ import models
 from torchvision import models as torchModels
 from sklearn.neighbors import NearestNeighbors
 from sklearn.manifold import TSNE
+from scipy.spatial import distance
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -114,6 +115,8 @@ class Model(nn.Module):
 
         elif self.reco_loss_function=='l1':
             self.reconstruction_criterion = nn.L1Loss(size_average=False)
+        
+        self.triplet_loss = nn.TripletMarginLoss(margin = self.margin)
 
     def reparameterize(self, mu, logvar):
         if self.reparameterize_with_noise:
@@ -201,39 +204,29 @@ class Model(nn.Module):
 
         #distance = distance.sum()
               
-        distanceI = torch.sum((mu_img - mu_att) ** 2, dim=1) 
-        distanceT = torch.sum((mu_att - mu_img) ** 2, dim=1)
+        lossI = []
+        lossT = []
         
-        tripletsHNI = []
-        tripletsHNT = []
-        
-        for i in range(0, mu_img.shape[0]):
-            tripletsI = []
-            tripletsT = []
-            for j in range(0, mu_img.shape[0]):
-                if i != j:
-                    distI = distanceI[i] - torch.sum((mu_img[i] - mu_att[j]) ** 2) + self.margin
-                    distI = torch.max(torch.FloatTensor([0]), distI)
-                    distI += torch.sum((torch.sqrt(logvar_img[i].exp()) - torch.sqrt(logvar_att[i].exp())) ** 2, dim=0)
-                    distI = torch.sqrt(distI)
-                    tripletsI.append(distI)
-                    
-                    distT = distanceT[i] - torch.sum((mu_att[i] - mu_img[j]) ** 2) + self.margin
-                    distT = torch.max(torch.FloatTensor([0]), distT)
-                    distT += torch.sum((torch.sqrt(logvar_att[i].exp()) - torch.sqrt(logvar_img[i].exp())) ** 2, dim=0)
-                    distT = torch.sqrt(distT)
-                    tripletsT.append(distT)
+        for j in range(0, mu_img.shape[0]-1):
+            perm = torch.arange(0, mu_img.shape[0])
+            perm = perm + j
+            perm[perm > (mu_img.shape[0]-1)] = perm[perm > (mu_img.shape[0]-1)]%(mu_img.shape[0])
             
-            tripletsHNI.append(min(tripletsI))
-            tripletsHNT.append(min(tripletsT))
-                        
+            mu_att_perm = mu_att[perm]
+            mu_img_perm = mu_img[perm]
+            
+            perm.cpu()
+            
+            lossI.append(self.triplet_loss(mu_img, mu_att, mu_att_perm))
+            lossT.append(self.triplet_loss(mu_att, mu_img, mu_img_perm))
+            
+            mu_img_perm.cpu()
+            mu_att_perm.cpu()
+    
+        losI = max(lossI)
+        losT = max(lossT)
         
-        tripletI2t = sum(tripletsHNI)
-        tripletT2i = sum(tripletsHNT)
-        
-        distance = tripletI2t + tripletT2i
-        
-        distance = torch.FloatTensor([distance]).to(self.device)
+        distance = losI + losT
 
         ##############################################
         # scale the loss terms according to the warmup
@@ -373,8 +366,8 @@ class Model(nn.Module):
             
             print('Evaluating retrieval...')
             metricsIepoch, metricsTepoch = self.retrieval()
-            metricsI.append(metricsIepoch)
-            metricsT.append(metricsTepoch)
+            metricsI.append([metricsIepoch[0], metricsIepoch[1], metricsIepoch[2]])
+            metricsT.append([metricsTepoch[0], metricsTepoch[1], metricsTepoch[2]])
         
             print('Evaluation Metrics for image retrieval')
             print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsIepoch[0], metricsIepoch[1], metricsIepoch[2], metricsIepoch[3], metricsIepoch[4], metricsIepoch[5], metricsIepoch[6]))
@@ -389,27 +382,46 @@ class Model(nn.Module):
             self.decoder[key].eval()
         
         
+        import os
+
+        file_name = "losses-HNTriplet.png"
+        file_name2 = 'metrics-HNTriplet.png'
+        if os.path.isfile(file_name):
+            expand = 1
+            while True:
+                expand += 1
+                new_file_name = file_name.split(".png")[0] + str(expand) + ".png"
+                new_file_name2 = file_name2.split('.png')[0] + str(expand) + '.png'
+                if os.path.isfile(new_file_name):
+                    continue
+                else:
+                    file_name = new_file_name
+                    file_name2 = new_file_name2
+                    break
+                
         #Plot de les losses i desar-lo
         plt.xlabel('Epoch')
         plt.ylabel('Loss')
-        plt.plot(np.arange(self.nepoch), elosses)
-        plt.plot(np.arange(self.nepoch), lossesR)
-        plt.plot(np.arange(self.nepoch), lossesK)
-        plt.plot(np.arange(self.nepoch), lossesC)
-        plt.plot(np.arange(self.nepoch), lossesD)
+        plt.plot(np.arange(self.nepoch), elosses, label="Total loss")
+        plt.plot(np.arange(self.nepoch), lossesR, label = 'Reconstruction loss')
+        plt.plot(np.arange(self.nepoch), lossesK, label = 'KL Divergence loss')
+        plt.plot(np.arange(self.nepoch), lossesC, label = 'Cross-Reconstruction loss')
+        plt.plot(np.arange(self.nepoch), lossesD, label = 'Hard Negative Triplet loss')
         plt.legend()
         plt.show()
-        plt.savefig('losses.png')
+        plt.savefig(file_name)
         plt.clf()
         
         #Plot de les metrics
         plt.xlabel('Epoch')
         plt.ylabel('Metric')
-        plt.plot(np.arange(self.nepoch), metricsI)
-        plt.plot(np.arange(self.nepoch), metricsT)
+        plt.plot(np.arange(self.nepoch), metricsI[0], label = 'T2I R@1')
+        plt.plot(np.arange(self.nepoch), metricsI[1], label = 'T2I R@5')
+        plt.plot(np.arange(self.nepoch), metricsT[0], label = 'I2T R@1')
+        plt.plot(np.arange(self.nepoch), metricsT[1], label = 'I2T R@5')
         plt.legend()
         plt.show()
-        plt.savefig('metrics.png')
+        plt.savefig(file_name2)
         plt.clf()
                 
         return losses, metricsI, metricsT
@@ -426,9 +438,9 @@ class Model(nn.Module):
             return distance
         
         #nbrsI = NearestNeighbors(n_neighbors=self.dataset.ntest, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
-        nbrsI = NearestNeighbors(n_neighbors=1000, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
+        #nbrsI = NearestNeighbors(n_neighbors=1000, algorithm='auto').fit(self.gallery_imgs_z.cpu().detach().numpy())
         #nbrsT = NearestNeighbors(n_neighbors=self.dataset.ntest, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
-        nbrsT = NearestNeighbors(n_neighbors=5000, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
+        #nbrsT = NearestNeighbors(n_neighbors=5000, algorithm='auto').fit(self.gallery_attrs_z.cpu().detach().numpy())
         
         distI_dict = {}
         distT_dict = {}
@@ -463,11 +475,12 @@ class Model(nn.Module):
             #img = [mu_img.cpu().detach().numpy(), logvar_img.cpu().detach().numpy()]
             #att = [mu_att.cpu().detach().numpy(), logvar_att.cpu().detach().numpy()]
             
-            distancesI, indicesI = nbrsI.kneighbors(mu_att.cpu().detach().numpy())      
-            distancesT, indicesT = nbrsT.kneighbors(mu_img.cpu().detach().numpy())
+            distancesI = distance.cdist(mu_att.cpu().detach().numpy(), self.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
+            distancesT = distance.cdist(mu_img.cpu().detach().numpy(), self.gallery_attrs_z.cpu().detach().numpy(), 'cosine')
             
-            distI_dict[i] = indicesI
-            distT_dict[i] = indicesT
+            indicesI = np.argsort(distancesI)
+            indicesT = np.argsort(distancesT[0,:])
+            
             
             for z in range(0,5):
                 if len(indicesI[z] == i) != 0:
@@ -476,8 +489,8 @@ class Model(nn.Module):
                     ranksI[:,(5*i) + z] = 1000
             
             
-            if len(np.where((indicesT[0] >= 5*i) & (indicesT[0] <= ((5*i) + 4)))) != 0:
-                ranksT[:,i] = np.where((indicesT[0] >= 5*i) & (indicesT[0] <= ((5*i) + 4)))[0][0]
+            if len(np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))) != 0:
+                ranksT[:,i] = np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))[0][0]
             else:
                 ranksT[:,i] = 1000
             
@@ -577,14 +590,14 @@ class Model(nn.Module):
                         
             
             if y == 0:
-                z_imgs = mu_img.cpu()
+                z_imgs = z_from_img.cpu()
                 z_vars_im = logvar_img.cpu()
-                z_attrs = mu_att.cpu()
+                z_attrs = z_from_att.cpu()
                 z_vars_att = logvar_att.cpu()
             else:
-                z_imgs = torch.cat((z_imgs.cpu(),mu_img.cpu()), dim = 0).cpu()
+                z_imgs = torch.cat((z_imgs.cpu(),z_from_img.cpu()), dim = 0).cpu()
                 z_vars_im = torch.cat((z_vars_im.cpu(),logvar_img.cpu()), dim = 0).cpu()
-                z_attrs = torch.cat((z_attrs.cpu(),mu_att.cpu()), dim = 0).cpu()
+                z_attrs = torch.cat((z_attrs.cpu(),z_from_att.cpu()), dim = 0).cpu()
                 z_vars_att = torch.cat((z_vars_att.cpu(),logvar_att.cpu()), dim = 0).cpu()
                 
             

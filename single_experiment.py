@@ -1,12 +1,15 @@
 
 ### execute this function to train and test the vae-model
 
-from vaemodelCDist import Model
+from vaemodelTriplet import Model
 import numpy as np
 import pickle
 import torch
 import os
 import argparse
+from pathlib import Path
+
+from evalModel import Evaluate
 
 #torch.autograd.set_detect_anomaly(True)
 
@@ -27,6 +30,14 @@ parser.add_argument('--num_shots',type=int, default = 0)
 parser.add_argument('--generalized', type = str2bool, default = True)
 args = parser.parse_args()
 
+training = True
+
+folder = str(Path(os.getcwd()))
+if folder[-5:] == 'model':
+    project_directory = Path(os.getcwd()).parent
+else:
+    project_directory = folder
+
 
 ########################################
 # the basic hyperparameters
@@ -37,20 +48,20 @@ hyperparameters = {
     'model_specifics': {'cross_reconstruction': True,
                        'name': 'CADA',
                        'distance': 'wasserstein',
-                       'warmup': {'beta': {'factor': 0.01,#0.25
+                       'warmup': {'beta': {'factor': 0.0001,#0.25
                                            'end_epoch': 93, #93
                                            'start_epoch': 0},
-                                  'cross_reconstruction': {'factor':1,#2.71
+                                  'cross_reconstruction': {'factor':5,#2.71
                                                            'end_epoch': 75,#75
                                                            'start_epoch': 21},#21
-                                  'distance': {'factor': 5, #8.13
+                                  'distance': {'factor': 100, #8.13
                                                'end_epoch': 22,#22
                                                'start_epoch': 6}}},#6
 
     'lr_gen_model': 0.0001,
     'clipping': 1,
     'generalized': True,
-    'batch_size': 25,
+    'batch_size': 20,
     'xyu_samples_per_class': {'SUN': (200, 0, 400, 0),
                               'APY': (200, 0, 400, 0),
                               'CUB': (200, 0, 400, 0),
@@ -59,7 +70,7 @@ hyperparameters = {
                               'AWA1': (200, 0, 400, 0)},
     'epochs': 100,
     'loss': 'l2',
-    'margin_loss': 2,
+    'margin_loss': 12,
     'auxiliary_data_source' : 'attributes',
     'attr': 'bert',
     'lr_cls': 0.001,
@@ -163,44 +174,62 @@ else:
 model = Model( hyperparameters)
 model.to(hyperparameters['device'])
 
-"""
-########################################
-### load model where u left
-########################################
-saved_state = torch.load('./saved_models/CADA_trained.pth.tar')
-model.load_state_dict(saved_state['state_dict'])
-for d in model.all_data_sources_without_duplicates:
-    model.encoder[d].load_state_dict(saved_state['encoder'][d])
-    model.decoder[d].load_state_dict(saved_state['decoder'][d])
-########################################
-"""
+if training:
+    """
+    ########################################
+    ### load model where u left
+    ########################################
+    saved_state = torch.load('./saved_models/CADA_trained.pth.tar')
+    model.load_state_dict(saved_state['state_dict'])
+    for d in model.all_data_sources_without_duplicates:
+        model.encoder[d].load_state_dict(saved_state['encoder'][d])
+        model.decoder[d].load_state_dict(saved_state['decoder'][d])
+    ########################################
+    """
+    
+    
+    losses, metricsI, metricsT = model.train_vae()
+    
+    model.generate_gallery()
+    
+    metricsI, metricsT = model.retrieval()
+    
+    #Printar metrics
+    print('Evaluation Metrics for image retrieval')
+    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
+    print('Evaluation Metrics for caption retrieval')
+    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
+            
+    
+    
+    # state = {
+    #             'state_dict': model.state_dict() ,
+    #             'hyperparameters':hyperparameters,
+    #             'encoder':{},
+    #             'decoder':{}
+    #         }
+    
+    # for d in model.all_data_sources:
+    #     state['encoder'][d] = model.encoder[d].state_dict()
+    #     state['decoder'][d] = model.decoder[d].state_dict()
+    
+    
+    torch.save(model.state_dict(), 'CADA_trained.pth.tar')
+    print('>> saved')
 
-
-losses, metricsI, metricsT = model.train_vae()
-
-model.generate_gallery()
-
-metricsI, metricsT = model.retrieval()
-
-#Printar metrics
-print('Evaluation Metrics for image retrieval')
-print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
-print('Evaluation Metrics for caption retrieval')
-print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
-        
-
-
-state = {
-            'state_dict': model.state_dict() ,
-            'hyperparameters':hyperparameters,
-            'encoder':{},
-            'decoder':{}
-        }
-
-for d in model.all_data_sources:
-    state['encoder'][d] = model.encoder[d].state_dict()
-    state['decoder'][d] = model.decoder[d].state_dict()
-
-
-torch.save(state, 'CADA_trained.pth.tar')
-print('>> saved')
+else:
+    
+    model.load_state_dict(torch.load(os.path.join(project_directory, 'model','CADA_trained.pth.tar')))
+    
+    ev = Evaluate()
+    
+    im, im_id, caption, sent_id = ev.selectEvalItems(path)
+    
+    model.generate_gallery()
+    
+    ev.evalI2T(model, im, im_id)
+    #ev.evalT2I(model, caption, sent_id)
+    
+    
+    
+    
