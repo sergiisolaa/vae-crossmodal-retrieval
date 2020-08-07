@@ -616,7 +616,7 @@ class Model(nn.Module):
         self.gallery_vars_att = z_vars_att.cpu()
         print(self.gallery_attrs_z.size())  
     
-    def obtain_embeds(vec, modality = 'image'):
+    def obtain_embeds(self,vec, modality = 'image'):
         
         if modality == 'image':
             vec = F.normalize(vec, p=2, dim=1)

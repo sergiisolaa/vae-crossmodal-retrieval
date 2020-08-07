@@ -219,9 +219,14 @@ class Model(nn.Module):
             
             lossI.append(self.triplet_loss(mu_img, mu_att, mu_att_perm))
             lossT.append(self.triplet_loss(mu_att, mu_img, mu_img_perm))
+            
+            mu_att_perm.cpu()
+            mu_img_perm.cpu()
     
         losI = sum(lossI)/len(lossI)
+        losI = torch.sqrt(losI + torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
         losT = sum(lossT)/len(lossT)
+        losT = torch.sqrt(losI + torch.sum((torch.sqrt(logvar_att.exp()) - torch.sqrt(logvar_img.exp())) ** 2, dim=1).sum())
         
         distance = losI + losT
                      
@@ -550,7 +555,6 @@ class Model(nn.Module):
     def generate_gallery(self):
         
         self.eval()
-        self.reparameterize_with_noise = True
         
         z_imgs = []
         z_vars_im = []
@@ -616,26 +620,7 @@ class Model(nn.Module):
         self.gallery_vars_att = z_vars_att.cpu()
         print(self.gallery_attrs_z.size())
         
-    
-    def obtain_embeds(self,vec, modality = 'image'):
-        
-        if modality == 'image':
-            vec = F.normalize(vec, p=2, dim=1)
-            vec = self.ft_bn(vec)
-            vec = self.fc_ft(vec)
-            
-            mu, logvar = self.encoder['resnet_features'](vec)
-            z = self.reparameterize(mu, logvar)
-        
-        elif modality == 'attributes':
-            vec = F.normalize(vec, p=2, dim=1)
-            vec = self.at_bn(vec)
-            vec = self.fc_at(vec)
-            
-            mu, logvar = self.encoder['attributes'](vec)
-            z = self.reparameterize(mu, logvar)
-        
-        return mu, logvar, z
+             
         
         
     def train_classifier(self, show_plots=False):

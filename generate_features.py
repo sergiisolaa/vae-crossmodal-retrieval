@@ -51,7 +51,7 @@ epochs_completed = 0
 #self.K = 50
 T = 150
         
-attr = 'attributes'
+attr = 'bert'
         
 transforms = transforms.Compose([ 
         transforms.Resize(imagesize),   
@@ -65,10 +65,12 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
     
-feature_extractor = torchModels.resnet101(pretrained = True)
-        
+feature_extractor_all = torchModels.resnet101(pretrained = True)
+feature_extractor = nn.Sequential(*list(feature_extractor_all.children())[:-2])
+   
+'''     
 num_ftrs = feature_extractor.fc.in_features
-feature_extractor.fc = Identity()
+feature_extractor.fc = Identity()'''
 feature_extractor.to(device)
         
 train_imgs = []
@@ -144,7 +146,7 @@ bert = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = Tru
 ntest = len(test_imgs_id)
 
 y = 0
-for i in range(0, len(train_imgs_id), 50):
+for i in range(0, len(train_imgs_id), 20):
     if attr == 'attributes':
         stop_words = set(nltk.corpus.stopwords.words('english')) 
         lemmatizer = WordNetLemmatizer() 
@@ -250,15 +252,15 @@ for i in range(0, len(train_imgs_id), 50):
     batch_att = torch.from_numpy(batch_att)
     
     if y == 0:
-        total_features = features
+        total_features = features.cpu()
         total_att = batch_att
     else:
-        total_features = torch.cat((total_features, features), dim = 0)
+        total_features = torch.cat((total_features, features.cpu()), dim = 0)
         total_att = torch.cat((total_att, batch_att), dim = 0)
     
     y = y + 1
 
-with open('ft_training.pkl','wb') as f:
+with open('ft_bert_training.pkl','wb') as f:
     pickle.dump([total_features], f)
     f.close()
 
@@ -272,7 +274,7 @@ elif attr == 'bert':
         ft.close()
 
 y = 0
-for i in range(0, ntest, 50):
+for i in range(0, ntest, 20):
     if attr == 'attributes':
         stop_words = set(nltk.corpus.stopwords.words('english')) 
         lemmatizer = WordNetLemmatizer() 
@@ -374,15 +376,15 @@ for i in range(0, ntest, 50):
     batch_att = torch.from_numpy(batch_att)
     
     if y == 0:
-        total_features = features
+        total_features = features.cpu()
         total_att = batch_att
     else:
-        total_features = torch.cat((total_features, features), dim = 0)
+        total_features = torch.cat((total_features, features.cpu()), dim = 0)
         total_att = torch.cat((total_att, batch_att), dim = 0)
     
     y = y + 1
 
-with open('ft_test.pkl','wb') as f:
+with open('ft_bert_test.pkl','wb') as f:
     pickle.dump([total_features], f)
     f.close()
 
