@@ -149,7 +149,78 @@ class Evaluate:
             imgs = imgs.save(fn)
             
             print('Image plotted')
+    
+    def evalRetrieval(self, model, printTop = 1):
+        
+        model.eval()
+        
+        ranksI = np.zeros((1,5*model.dataset.ntest))
+        ranksT = np.zeros((1,model.dataset.ntest))    
+        
+        for i in range(0, model.dataset.ntest):
             
+            mu_img = model.gallery_imgs_z[i,:].unsqueeze(0)  
+            mu_att = model.gallery_attrs_z[5*i:5*i + 5,:]
+            
+            distancesI = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
+            distancesT = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_attrs_z.cpu().detach().numpy(), 'cosine')
+            
+            indicesI = np.argsort(distancesI)
+            indicesT = np.argsort(distancesT[0,:])
+                       
+                        
+            for z in range(0,5):
+                if len(indicesI[z] == i) != 0:
+                    ranksI[:,(5*i) + z] = np.where(indicesI[z] == i)[0][0]
+                else:
+                    ranksI[:,(5*i) + z] = 1000
+                
+                if ranksI[:,(5*i) + z] < printTop:
+                    
+                    for j in range(0,10):
+                        im = self.bbdd[indicesI[z][j]]['filename']
+                    
+                        img = Image.open(os.path.join(self.path, 'images', im))
+                    
+                        
+                    
+                        fn = 'r'+str(j)+'-'+str((5*i)+z)+'.png'
+                        print(fn)
+                        img.save(fn)
+                    
+                    captions = self.bbdd[int(i)]['sentences']
+                    caption = captions[z]
+                    
+                    print('QUERY', str(((5*i)+z)))
+                    print(caption['raw'])
+            
+            
+            if len(np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))) != 0:
+                ranksT[:,i] = np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))[0][0]
+            else:
+                ranksT[:,i] = 1000
+                
+            if ranksT[:,i] < printTop:
+                im = self.bbdd[int(i)]['filename']
+                
+                img = Image.open(os.path.join(self.path, 'images', im))               
+                
+                
+                fn = 'query'+str(i)+'.png'
+                print(fn)
+                img.save(fn)
+                
+                for j in range(0,10):
+                    captions = self.bbdd[indicesT[j] // 5]['sentences']
+                    caption = captions[indicesT[j]%5]
+                    
+                    print(caption['raw'])
+        
+        #Fer el retrieval de tots per tots
+        #Si printTop fer plot, save i print dels top1 (query i retrieved)
+        
+        
+        
         
         
         

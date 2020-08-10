@@ -30,7 +30,11 @@ parser.add_argument('--num_shots',type=int, default = 0)
 parser.add_argument('--generalized', type = str2bool, default = True)
 args = parser.parse_args()
 
-training = True
+training = False
+
+evalR = True
+
+printTop = 5
 
 folder = str(Path(os.getcwd()))
 if folder[-5:] == 'model':
@@ -70,7 +74,7 @@ hyperparameters = {
                               'AWA1': (200, 0, 400, 0)},
     'epochs': 100,
     'loss': 'l2',
-    'margin_loss': 12,
+    'margin_loss': 8,
     'auxiliary_data_source' : 'attributes',
     'attr': 'bert',
     'lr_cls': 0.001,
@@ -219,16 +223,33 @@ if training:
 
 else:
     
+    print(os.path.join(project_directory, 'model','CADA_trained.pth.tar'))
     model.load_state_dict(torch.load(os.path.join(project_directory, 'model','CADA_trained.pth.tar')))
     
     ev = Evaluate()
+    im, im_id, caption, sent_id = ev.selectEvalItems(os.path.join(project_directory,'data', 'flickr30k'))
     
-    im, im_id, caption, sent_id = ev.selectEvalItems(path)
+    print(project_directory)  
+    
+    model.eval()
     
     model.generate_gallery()
     
-    ev.evalI2T(model, im, im_id)
-    #ev.evalT2I(model, caption, sent_id)
+    metricsI, metricsT = model.retrieval()
+    
+    #Printar metrics
+    print('Evaluation Metrics for image retrieval')
+    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
+    print('Evaluation Metrics for caption retrieval')
+    print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
+
+    if evalR == False:  
+                
+        ev.evalI2T(model, im, im_id)
+        ev.evalT2I(model, caption, sent_id)
+    
+    else: 
+        ev.evalRetrieval(model, printTop)
     
     
     

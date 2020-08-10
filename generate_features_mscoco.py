@@ -41,7 +41,7 @@ else:
         
 path = os.path.join(project_directory,'data',dataset)
         
-image_path = os.path.join(path,'train2014')
+image_path = path
 print('The images folder is')
 print(image_path)
         
@@ -137,7 +137,8 @@ with open(attr_filename) as f:
                     
     f.close()
 
-attr_filename = os.path.join(path,'annotationsTest', 'image_info_test2014.json')
+'''
+attr_filename = os.path.join(path,'annotations', 'image_info_test2014.json')
 with open(attr_filename) as f:
     json_data = json.loads(f.read())
     image_list = json_data['images']
@@ -156,7 +157,7 @@ with open(attr_filename) as f:
                 
                     
     f.close()
-    
+'''   
     # '''                
     # elif images['split'] == 'val':
     #     val_imgs.append(images['filename'])
@@ -206,7 +207,7 @@ for i in range(0, len(train_imgs_id), 20):
     if attr == 'bert':
         bert.eval()
     
-    idx = np.arange(i,i + 50)
+    idx = np.arange(i,i + 20)
     
     j = 0
     for x in idx:
@@ -309,20 +310,20 @@ for i in range(0, len(train_imgs_id), 20):
 
 
 if attr == 'attributes':
-    with open('attr_training.pkl','wb') as ft:
+    with open('attr_training_mscoco.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
     
-    with open('ft_attributes_training.pkl','wb') as f:
+    with open('ft_attributes_training_mscoco.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
 elif attr == 'bert':
-    with open('ft_bert_training.pkl','wb') as f:
+    with open('ft_bert_training_mscoco.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
-    with open('bert_training.pkl','wb') as ft:
+    with open('bert_training_mscoco.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
 
@@ -341,7 +342,7 @@ for i in range(0, ntest, 20):
     if attr == 'bert':
         bert.eval()
     
-    idx = np.arange(i,i + 50)
+    idx = np.arange(i,i + 20)
     
     j = 0
     for x in idx:
@@ -438,20 +439,20 @@ for i in range(0, ntest, 20):
     y = y + 1
 
 if attr == 'attributes':
-    with open('attr_test.pkl','wb') as ft:
+    with open('attr_test_mscoco.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
     
-    with open('ft_attributes_test.pkl','wb') as f:
+    with open('ft_attributes_test_mscoco.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
 elif attr == 'bert':
-    with open('ft_bert_test.pkl','wb') as f:
+    with open('ft_bert_test_mscoco.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
-    with open('bert_test.pkl','wb') as ft:
+    with open('bert_test_mscoco.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
     

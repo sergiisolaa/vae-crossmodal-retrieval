@@ -643,7 +643,7 @@ class Model(nn.Module):
     #
     #filipradenovic/cnnimageretrieval-pytorch 
     #(https://github.com/filipradenovic/cnnimageretrieval-pytorch/)
-    def rmac(x, L=3, eps=1e-6):
+    def rmac(self,x, L=3, eps=1e-6):
         ovr = 0.4 # desired overlap of neighboring regions
         steps = torch.Tensor([2, 3, 4, 5, 6, 7]) # possible regions for the long dimension
     

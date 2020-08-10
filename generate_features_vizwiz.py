@@ -26,7 +26,7 @@ nltk.download('stopwords')
 nltk.download('wordnet')
 from nltk.stem import WordNetLemmatizer 
 
-dataset = 'MSCOCO' #'MSCOCO', 'VizWiz'
+dataset = 'VizWiz' #'MSCOCO', 'VizWiz'
 
 device = 'cuda'
 imagesize = 224
@@ -41,7 +41,7 @@ else:
         
 path = os.path.join(project_directory,'data',dataset)
         
-image_path = os.path.join(path,'train2014')
+image_path = path
 print('The images folder is')
 print(image_path)
         
@@ -91,7 +91,7 @@ test_sentences = {}
 test_sents_ids = {}
         
 print(path)
-attr_filename = os.path.join(path,'annotations', 'captions_train2014.json')
+attr_filename = os.path.join(path,'annotations', 'train.json')
 with open(attr_filename) as f:
     json_data = json.loads(f.read())
     image_list = json_data['images']
@@ -117,8 +117,11 @@ with open(attr_filename) as f:
                     voc.add_sentence(tokens_l)
                     
     f.close()
-   
-attr_filename = os.path.join(path,'annotations', 'captions_val2014.json')
+
+len(train_imgs)
+
+'''
+attr_filename = os.path.join(path,'annotations', 'val.json')
 with open(attr_filename) as f:
     json_data = json.loads(f.read())
     image_list = json_data['images']
@@ -136,8 +139,8 @@ with open(attr_filename) as f:
                 val_sentences[images['id']].append(caption)
                     
     f.close()
-
-attr_filename = os.path.join(path,'annotationsTest', 'image_info_test2014.json')
+'''
+attr_filename = os.path.join(path,'annotations', 'val.json')
 with open(attr_filename) as f:
     json_data = json.loads(f.read())
     image_list = json_data['images']
@@ -191,10 +194,10 @@ K = vocabulary.num_words
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case = True)
 bert = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = True).to(device)
             
-ntest = len(test_imgs_id)
+ntest = len(test_imgs)
 
 y = 0
-for i in range(0, len(train_imgs_id), 20):
+for i in range(0, len(train_imgs), 20):
     
         
     #Obrir imatges
@@ -206,11 +209,12 @@ for i in range(0, len(train_imgs_id), 20):
     if attr == 'bert':
         bert.eval()
     
-    idx = np.arange(i,i + 50)
+    idx = np.arange(i,i + 20)
     
     j = 0
     for x in idx:
-        imfile = os.path.join(image_path,'train2014',train_imgs[x])
+        print(x)
+        imfile = os.path.join(image_path,'train',train_imgs[x])
         #print(imfile)
         image = Image.open(imfile).resize((imagesize, imagesize))
         #image = torch.from_numpy(np.array(image, np.float32)).float()
@@ -309,20 +313,20 @@ for i in range(0, len(train_imgs_id), 20):
 
 
 if attr == 'attributes':
-    with open('attr_training.pkl','wb') as ft:
+    with open('attr_training_vizwiz.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
     
-    with open('ft_attributes_training.pkl','wb') as f:
+    with open('ft_attributes_training_vizwiz.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
 elif attr == 'bert':
-    with open('ft_bert_training.pkl','wb') as f:
+    with open('ft_bert_training_vizwiz.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
-    with open('bert_training.pkl','wb') as ft:
+    with open('bert_training_vizwiz.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
 
@@ -341,11 +345,11 @@ for i in range(0, ntest, 20):
     if attr == 'bert':
         bert.eval()
     
-    idx = np.arange(i,i + 50)
+    idx = np.arange(i,i + 20)
     
     j = 0
     for x in idx:
-        imfile = os.path.join(image_path,'test2014',test_imgs[x])
+        imfile = os.path.join(image_path,'test',test_imgs[x])
         #print(imfile)
         image = Image.open(imfile).resize((imagesize, imagesize))
         #image = torch.from_numpy(np.array(image, np.float32)).float()
@@ -438,20 +442,20 @@ for i in range(0, ntest, 20):
     y = y + 1
 
 if attr == 'attributes':
-    with open('attr_test.pkl','wb') as ft:
+    with open('attr_test_vizwiz.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
     
-    with open('ft_attributes_test.pkl','wb') as f:
+    with open('ft_attributes_test_vizwiz.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
 elif attr == 'bert':
-    with open('ft_bert_test.pkl','wb') as f:
+    with open('ft_bert_test_vizwiz.pkl','wb') as f:
         pickle.dump([total_features], f)
         f.close()
         
-    with open('bert_test.pkl','wb') as ft:
+    with open('bert_test_vizwiz.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
     

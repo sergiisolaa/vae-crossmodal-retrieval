@@ -217,13 +217,16 @@ class Model(nn.Module):
             
             perm.cpu()
             
-            lossI.append(self.triplet_loss(mu_img, mu_att, mu_att_perm))
-            lossT.append(self.triplet_loss(mu_att, mu_img, mu_img_perm))
+            lossI.append(self.triplet_loss(mu_img, mu_att, mu_att_perm).cpu())
+            lossT.append(self.triplet_loss(mu_att, mu_img, mu_img_perm).cpu())
+            
+            mu_att_perm.cpu()
+            mu_img_perm.cpu()
     
         losI = sum(lossI)/len(lossI)
         losT = sum(lossT)/len(lossT)
         
-        distance = losI + losT
+        distance = losI.to(self.device) + losT.to(self.device)
                      
         
 
