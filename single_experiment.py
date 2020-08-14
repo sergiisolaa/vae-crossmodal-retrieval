@@ -1,7 +1,7 @@
 
 ### execute this function to train and test the vae-model
 
-from vaemodelTriplet import Model
+from vaemodel import Model
 import numpy as np
 import pickle
 import torch
@@ -30,7 +30,7 @@ parser.add_argument('--num_shots',type=int, default = 0)
 parser.add_argument('--generalized', type = str2bool, default = True)
 args = parser.parse_args()
 
-training = False
+training = True
 
 evalR = True
 
@@ -65,7 +65,7 @@ hyperparameters = {
     'lr_gen_model': 0.0001,
     'clipping': 1,
     'generalized': True,
-    'batch_size': 20,
+    'batch_size': 5,
     'xyu_samples_per_class': {'SUN': (200, 0, 400, 0),
                               'APY': (200, 0, 400, 0),
                               'CUB': (200, 0, 400, 0),
@@ -191,6 +191,7 @@ if training:
     ########################################
     """
     
+    print(model)
     
     losses, metricsI, metricsT = model.train_vae()
     
@@ -206,25 +207,43 @@ if training:
             
     
     
-    # state = {
-    #             'state_dict': model.state_dict() ,
-    #             'hyperparameters':hyperparameters,
-    #             'encoder':{},
-    #             'decoder':{}
-    #         }
+    state = {
+                'state_dict': model.state_dict() ,
+                'hyperparameters':hyperparameters,
+                'encoder':{},
+                'decoder':{},
+                'fc_ft': model.fc_ft.state_dict(),
+                'ft_bn': model.ft_bn.state_dict(),
+                'fc_at': model.fc_at.state_dict(),
+                'at_bn': model.at_bn.state_dict()                
+            }
     
-    # for d in model.all_data_sources:
-    #     state['encoder'][d] = model.encoder[d].state_dict()
-    #     state['decoder'][d] = model.decoder[d].state_dict()
+    for d in model.all_data_sources:
+        state['encoder'][d] = model.encoder[d].state_dict()
+        state['decoder'][d] = model.decoder[d].state_dict()    
     
+    print(state)
     
-    torch.save(model.state_dict(), 'CADA_trained.pth.tar')
+    torch.save(state, 'CADA_trained_Triplet_State.pth.tar')
     print('>> saved')
 
 else:
     
-    print(os.path.join(project_directory, 'model','CADA_trained.pth.tar'))
-    model.load_state_dict(torch.load(os.path.join(project_directory, 'model','CADA_trained.pth.tar')))
+    print(model)
+    
+    print(os.path.join(project_directory, 'model','CADA_trained_Triplet_State.pth.tar'))
+    saved_state = torch.load('CADA_trained.pth.tar')
+    model.load_state_dict(saved_state['state_dict'])
+    for d in model.all_data_sources_without_duplicates:
+        model.encoder[d].load_state_dict(saved_state['encoder'][d])
+        model.decoder[d].load_state_dict(saved_state['decoder'][d])
+    
+    model.fc_ft.load_state_dict(saved_state['fc_ft'])
+    model.fc_ft.load_state_dict(saved_state['fc_at'])
+    model.fc_ft.load_state_dict(saved_state['ft_bn'])
+    model.fc_ft.load_state_dict(saved_state['at_bn'])
+    
+    print(model)
     
     ev = Evaluate()
     im, im_id, caption, sent_id = ev.selectEvalItems(os.path.join(project_directory,'data', 'flickr30k'))

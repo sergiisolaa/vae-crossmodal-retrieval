@@ -1,5 +1,9 @@
 #vaemodel
+import os
+from pathlib import Path
 import copy
+import json
+
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -8,30 +12,25 @@ import torch.optim as optim
 import torch.autograd as autograd
 from torch.utils import data
 from data_loader import DATA_LOADER as dataloader
-from dataloader import Flickr30k as dataLoader
+from dataloader import MSCOCO as dataLoader
 import final_classifier as  classifier
 import models
 from torchvision import models as torchModels
 from sklearn.neighbors import NearestNeighbors
 from sklearn.manifold import TSNE
 from scipy.spatial import distance
-from PIL import Image
 import numpy as np
-import os
-from pathlib import Path
-import json
 
-#import rasterfairy
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import imshow
+#import rasterfairy
+from PIL import Image
 
 folder = str(Path(os.getcwd()))
 if folder[-5:] == 'model':
     project_directory = Path(os.getcwd()).parent
 else:
     project_directory = folder
-    
-
 
 class LINEAR_LOGSOFTMAX(nn.Module):
     def __init__(self, input_dim, nclass):
@@ -116,11 +115,13 @@ class Model(nn.Module):
         for datatype in self.all_data_sources:
             parameters_to_optimize +=  list(self.encoder[datatype].parameters())
             parameters_to_optimize +=  list(self.decoder[datatype].parameters())
+            
         parameters_to_optimize += list(self.fc_ft.parameters())
         parameters_to_optimize += list(self.fc_at.parameters())
         parameters_to_optimize += list(self.ft_bn.parameters())
         parameters_to_optimize += list(self.at_bn.parameters())
         
+              
         
         self.optimizer  = optim.Adam( parameters_to_optimize ,lr=hyperparameters['lr_gen_model'], betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=True)
 
@@ -129,6 +130,8 @@ class Model(nn.Module):
 
         elif self.reco_loss_function=='l1':
             self.reconstruction_criterion = nn.L1Loss(size_average=False)
+            
+        self.triplet_loss = nn.TripletMarginLoss(margin=self.margin)
 
     def reparameterize(self, mu, logvar):
         if self.reparameterize_with_noise:
@@ -156,7 +159,7 @@ class Model(nn.Module):
         # Encode image features and additional
         # features
         ##############################################
-        #img_in = F.normalize(self.rmac(img), p=2, dim = 1).squeeze(-1).squeeze(-1)
+        
         img_in = F.normalize(img, p=2, dim=1)
         img_in = self.ft_bn(img_in)
         
@@ -211,40 +214,36 @@ class Model(nn.Module):
         ##############################################
         # Distribution Alignment
         ##############################################
-        distance = torch.sqrt(torch.sum((mu_img - mu_att) ** 2, dim=1) + \
-                              torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
+        #distance = torch.sqrt(torch.sum((mu_img - mu_att) ** 2, dim=1) + \
+        #                      torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
 
-        distance = distance.sum()
-              
-        #distanceI = torch.sum((mu_img - mu_att) ** 2, dim=1) 
-        #distanceT = torch.sum((mu_att - mu_img) ** 2, dim=1)
+        #distance = distance.sum()
         
-        #tripletsI = []
-        #tripletsT = []
+        lossI = []
+        lossT = []
         
-        #for i in range(0, mu_img.shape[0]):
-        #    for j in range(0, mu_img.shape[0]):
-        #        if i != j:
-        #            distI = distanceI[i] - torch.sum((mu_img[i] - mu_att[j]) ** 2) + self.margin
-        #            distI = torch.max(torch.FloatTensor([0]), distI)
-        #            distI += torch.sum((torch.sqrt(logvar_img[i].exp()) - torch.sqrt(logvar_att[i].exp())) ** 2, dim=0)
-        #            distI = torch.sqrt(distI)
-        #            tripletsI.append(distI)
-                    
-        #            distT = distanceT[i] - torch.sum((mu_att[i] - mu_img[j]) ** 2) + self.margin
-        #            distT = torch.max(torch.FloatTensor([0]), distT)
-        #            distT += torch.sum((torch.sqrt(logvar_att[i].exp()) - torch.sqrt(logvar_img[i].exp())) ** 2, dim=0)
-        #            distT = torch.sqrt(distT)
-        #            tripletsT.append(distT)
-                    
-                        
+        for j in range(0, mu_img.shape[0]-1):
+            perm = torch.arange(0, mu_img.shape[0])
+            perm = perm + j
+            perm[perm > (mu_img.shape[0]-1)] = perm[perm > (mu_img.shape[0]-1)]%(mu_img.shape[0])
+            
+            mu_att_perm = mu_att[perm]
+            mu_img_perm = mu_img[perm]
+            
+            perm.cpu()
+            
+            lossI.append(self.triplet_loss(mu_img, mu_att, mu_att_perm).cpu())
+            lossT.append(self.triplet_loss(mu_att, mu_img, mu_img_perm).cpu())
+            
+            mu_att_perm.cpu()
+            mu_img_perm.cpu()
+    
+        losI = sum(lossI)/len(lossI)
+        losT = sum(lossT)/len(lossT)
         
-        #tripletI2t = sum(tripletsI)
-        #tripletT2i = sum(tripletsT)
+        distance = losI.to(self.device) + losT.to(self.device)
+                     
         
-        #distance = tripletI2t + tripletT2i
-        
-        #distance = torch.FloatTensor([distance]).to(self.device)
 
         ##############################################
         # scale the loss terms according to the warmup
@@ -304,9 +303,10 @@ class Model(nn.Module):
         metricsI = []
         metricsT = []
         
+        test_imgs = []
+        
         PATH = os.path.join(project_directory,'data','flickr30k')
         
-        test_imgs = []
         with open(os.path.join(PATH,'dataset.json')) as f:
             json_data = json.loads(f.read())
             image_list = json_data['images']
@@ -314,6 +314,7 @@ class Model(nn.Module):
             for images in image_list:
                 if images['split'] == 'test':
                     test_imgs.append(images['filename'])
+                    
         
         print('train for reconstruction')
         for epoch in range(0, self.nepoch ):
@@ -384,6 +385,18 @@ class Model(nn.Module):
             z_imgs_embedded = TSNE(n_components=2).fit_transform(self.gallery_imgs_z.clone().cpu().detach())
             z_attrs_embedded = TSNE(n_components=2).fit_transform(self.gallery_attrs_z.clone().cpu().detach())
             
+            
+            '''
+            
+            plt.scatter(z_imgs_embedded[:,0], z_imgs_embedded[:,1], c = 'red')
+            filename = 't-sne-plot-epoch'+str(epoch)+'-images.png'
+            plt.savefig(filename)
+            plt.clf()
+            plt.scatter(z_attrs_embedded[:,0], z_attrs_embedded[:,1], c = 'blue')
+            filename = 't-sne-plot-epoch'+str(epoch)+'-attr.png'
+            plt.savefig(filename)
+            plt.clf()
+            
             tx_imgs = z_imgs_embedded[:,0]
             ty_imgs = z_imgs_embedded[:,1]
             tx_attrs = z_attrs_embedded[:,0]
@@ -392,12 +405,16 @@ class Model(nn.Module):
             tx_imgs = (tx_imgs-np.min(tx_imgs))/(np.max(tx_imgs)-np.min(tx_imgs))
             ty_imgs = (ty_imgs-np.min(ty_imgs))/(np.max(ty_imgs)-np.min(ty_imgs))
             
-            
+            nx = 40
+            ny = 25
+            w = 72
+            h = 56
+            ar = float(w)/h
             
             full_image = Image.new('RGBA', (4000, 3000))
-            #grid_image = Image.new('RGB', (w*nx, h*ny))
+            grid_image = Image.new('RGB', (w*nx, h*ny))
             
-            #grid_assignment = rasterfairy.transformPointCloud2D(z_imgs_embedded,target=(nx,ny))
+            grid_assignment = rasterfairy.transformPointCloud2D(z_imgs_embedded,target=(nx,ny))
             
             for z in range(0, self.dataset.ntest):
                 
@@ -409,8 +426,22 @@ class Model(nn.Module):
                 tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
                 
                 full_image.paste(tile, (int((4000 - 100)*tx_imgs[z]), int((3000 - 100)*ty_imgs[z])), mask = tile.convert('RGBA'))
-                            
                 
+                idx_x, idx_y = grid_assignment[0][z]
+                x, y = w*idx_x, h*idx_y
+                
+                tile_ar = float(tile.width)/tile.height
+                
+                if tile_ar > ar:
+                    margin = 0.5*(tile.width - ar*tile.height)
+                    tile = tile.crop((margin, 0, margin + ar*tile.height, tile.height))
+                    
+                else:
+                    margin = 0.5*(tile.height - float(tile.width)/ar)
+                    tile = tile.crop((0,margin,tile.width, margin+float(tile.width)/ar))
+                
+                tile = tile.resize((w,h), Image.ANTIALIAS)
+                grid_image.paste(tile,(int(x), int(y)))
                     
                 
                 
@@ -423,14 +454,12 @@ class Model(nn.Module):
             plt.clf()
             
             
-            
-            
-            plt.scatter(z_imgs_embedded[:,0], z_imgs_embedded[:,1], c = 'red')
-            plt.scatter(z_attrs_embedded[:,0], z_attrs_embedded[:,1], c = 'blue')
-            filename = 't-sne-plot-epoch'+str(epoch)+'.png'
-            plt.savefig(filename)
+            plt.figure(figsize = (16,12))
+            imshow(grid_image)
+            filename = 'GridImage-t-sne-plot-epoch'+str(epoch)+'-images.png'
+            grid_image.save(filename)
             plt.clf()
-            
+            '''
             
             print('Evaluating retrieval...')
             metricsIepoch, metricsTepoch = self.retrieval()
@@ -450,9 +479,8 @@ class Model(nn.Module):
             self.decoder[key].eval()
         
         
-
-        file_name = "losses-DA.png"
-        file_name2 = 'metrics-DA.png'
+        file_name = "losses-ANTriplet.png"
+        file_name2 = 'metrics-ANTriplet.png'
         if os.path.isfile(file_name):
             expand = 1
             while True:
@@ -460,6 +488,8 @@ class Model(nn.Module):
                 new_file_name = file_name.split(".png")[0] + str(expand) + ".png"
                 new_file_name2 = file_name2.split('.png')[0] + str(expand) + '.png'
                 if os.path.isfile(new_file_name):
+                    continue
+                elif os.path.isfile(new_file_name2):
                     continue
                 else:
                     file_name = new_file_name
@@ -473,24 +503,26 @@ class Model(nn.Module):
         plt.plot(np.arange(self.nepoch), lossesR, label = 'Reconstruction loss')
         plt.plot(np.arange(self.nepoch), lossesK, label = 'KL Divergence loss')
         plt.plot(np.arange(self.nepoch), lossesC, label = 'Cross-Reconstruction loss')
-        plt.plot(np.arange(self.nepoch), lossesD, label = 'Distance-Alignment loss')
+        plt.plot(np.arange(self.nepoch), lossesD, label = 'Triplet loss')
         plt.legend()
         plt.show()
         plt.savefig(file_name)
         plt.clf()
         
+        '''
         #Plot de les metrics
         plt.xlabel('Epoch')
         plt.ylabel('Metric')
-        plt.plot(np.arange(self.nepoch), metricsI[0], label = 'T2I R@1')
-        plt.plot(np.arange(self.nepoch), metricsI[1], label = 'T2I R@5')
+        plt.plot(np.arange(self.nepoch), metricsI, label = 'T2I R@1')
+        plt.plot(np.arange(self.nepoch), metricsI, label = 'T2I R@5')
         plt.plot(np.arange(self.nepoch), metricsT[0], label = 'I2T R@1')
         plt.plot(np.arange(self.nepoch), metricsT[1], label = 'I2T R@5')
         plt.legend()
         plt.show()
         plt.savefig(file_name2)
         plt.clf()
-                
+        '''
+        
         return losses, metricsI, metricsT
     
     
@@ -614,6 +646,7 @@ class Model(nn.Module):
     def generate_gallery(self):
         
         self.eval()
+        self.reparameterize_with_noise = True
         
         z_imgs = []
         z_vars_im = []
@@ -638,7 +671,7 @@ class Model(nn.Module):
                 data_from_modalities[j] = data_from_modalities[j].to(self.device)
                 data_from_modalities[j].requires_grad = False
                 if j== 0:
-                    #data_from_modalities[j] = F.normalize(self.rmac(data_from_modalities[j]), p=2, dim = 1).squeeze(-1).squeeze(-1)
+                    #Add L2 norm and BatchNorm?
                     data_from_modalities[j] = F.normalize(data_from_modalities[j], p=2, dim=1)
                     data_from_modalities[j] = self.ft_bn(data_from_modalities[j])
                     data_from_modalities[j] = self.fc_ft(data_from_modalities[j])
@@ -656,14 +689,14 @@ class Model(nn.Module):
                         
             
             if y == 0:
-                z_imgs = z_from_img.cpu()
+                z_imgs = mu_img.cpu()
                 z_vars_im = logvar_img.cpu()
-                z_attrs = z_from_att.cpu()
+                z_attrs = mu_att.cpu()
                 z_vars_att = logvar_att.cpu()
             else:
-                z_imgs = torch.cat((z_imgs.cpu(),z_from_img.cpu()), dim = 0).cpu()
+                z_imgs = torch.cat((z_imgs.cpu(),mu_img.cpu()), dim = 0).cpu()
                 z_vars_im = torch.cat((z_vars_im.cpu(),logvar_img.cpu()), dim = 0).cpu()
-                z_attrs = torch.cat((z_attrs.cpu(),z_from_att.cpu()), dim = 0).cpu()
+                z_attrs = torch.cat((z_attrs.cpu(),mu_att.cpu()), dim = 0).cpu()
                 z_vars_att = torch.cat((z_vars_att.cpu(),logvar_att.cpu()), dim = 0).cpu()
                 
             
@@ -677,12 +710,12 @@ class Model(nn.Module):
         print(self.gallery_imgs_z.size())
         self.gallery_attrs_z = z_attrs.cpu()
         self.gallery_vars_att = z_vars_att.cpu()
-        print(self.gallery_attrs_z.size())  
+        print(self.gallery_attrs_z.size())
+        
     
     def obtain_embeds(self,vec, modality = 'image'):
         
         if modality == 'image':
-            vec = F.normalize(self.rmac(vec), p=2, dim = 1).squeeze(-1).squeeze(-1)
             vec = F.normalize(vec, p=2, dim=1)
             vec = self.ft_bn(vec)
             vec = self.fc_ft(vec)
@@ -700,61 +733,207 @@ class Model(nn.Module):
         
         return mu, logvar, z
         
-    #####################################################################################################################
-    #Function extracted from GitHub: 
-    #
-    #filipradenovic/cnnimageretrieval-pytorch 
-    #(https://github.com/filipradenovic/cnnimageretrieval-pytorch/)
-    def rmac(self,x, L=3, eps=1e-6):
-        ovr = 0.4 # desired overlap of neighboring regions
-        steps = torch.Tensor([2, 3, 4, 5, 6, 7]) # possible regions for the long dimension
-    
-        W = x.size(3)
-        H = x.size(2)
-    
-        w = min(W, H)
-        w2 = math.floor(w/2.0 - 1)
-    
-        b = (max(H, W)-w)/(steps-1)
-        (tmp, idx) = torch.min(torch.abs(((w**2 - w*b)/w**2)-ovr), 0) # steps(idx) regions for long dimension
-    
-        # region overplus per dimension
-        Wd = 0;
-        Hd = 0;
-        if H < W:  
-            Wd = idx.item() + 1
-        elif H > W:
-            Hd = idx.item() + 1
-    
-        v = F.max_pool2d(x, (x.size(-2), x.size(-1)))
-        v = v / (torch.norm(v, p=2, dim=1, keepdim=True) + eps).expand_as(v)
-    
-        for l in range(1, L+1):
-            wl = math.floor(2*w/(l+1))
-            wl2 = math.floor(wl/2 - 1)
-    
-            if l+Wd == 1:
-                b = 0
-            else:
-                b = (W-wl)/(l+Wd-1)
-            cenW = torch.floor(wl2 + torch.Tensor(range(l-1+Wd+1))*b) - wl2 # center coordinates
-            if l+Hd == 1:
-                b = 0
-            else:
-                b = (H-wl)/(l+Hd-1)
-            cenH = torch.floor(wl2 + torch.Tensor(range(l-1+Hd+1))*b) - wl2 # center coordinates
-                
-            for i_ in cenH.tolist():
-                for j_ in cenW.tolist():
-                    if wl == 0:
-                        continue
-                    R = x[:,:,(int(i_)+torch.Tensor(range(wl)).long()).tolist(),:]
-                    R = R[:,:,:,(int(j_)+torch.Tensor(range(wl)).long()).tolist()]
-                    vt = F.max_pool2d(R, (R.size(-2), R.size(-1)))
-                    vt = vt / (torch.norm(vt, p=2, dim=1, keepdim=True) + eps).expand_as(vt)
-                    v += vt
-    
-        return v
         
-        
-    
+    def train_classifier(self, show_plots=False):
+
+        if self.num_shots > 0 :
+            print('================  transfer features from test to train ==================')
+            self.dataset.transfer_features(self.num_shots, num_queries='num_features')
+
+        history = []  # stores accuracies
+
+
+        cls_seenclasses = self.dataset.seenclasses
+        cls_novelclasses = self.dataset.novelclasses
+
+
+        train_seen_feat = self.dataset.data['train_seen']['resnet_features']
+        train_seen_label = self.dataset.data['train_seen']['labels']
+
+        novelclass_aux_data = self.dataset.novelclass_aux_data  # access as novelclass_aux_data['resnet_features'], novelclass_aux_data['attributes']
+        seenclass_aux_data = self.dataset.seenclass_aux_data
+
+        novel_corresponding_labels = self.dataset.novelclasses.long().to(self.device)
+        seen_corresponding_labels = self.dataset.seenclasses.long().to(self.device)
+
+
+        # The resnet_features for testing the classifier are loaded here
+        novel_test_feat = self.dataset.data['test_unseen'][
+            'resnet_features']  # self.dataset.test_novel_feature.to(self.device)
+        seen_test_feat = self.dataset.data['test_seen'][
+            'resnet_features']  # self.dataset.test_seen_feature.to(self.device)
+        test_seen_label = self.dataset.data['test_seen']['labels']  # self.dataset.test_seen_label.to(self.device)
+        test_novel_label = self.dataset.data['test_unseen']['labels']  # self.dataset.test_novel_label.to(self.device)
+
+        train_unseen_feat = self.dataset.data['train_unseen']['resnet_features']
+        train_unseen_label = self.dataset.data['train_unseen']['labels']
+
+
+        # in ZSL mode:
+        if self.generalized == False:
+            # there are only 50 classes in ZSL (for CUB)
+            # novel_corresponding_labels =list of all novel classes (as tensor)
+            # test_novel_label = mapped to 0-49 in classifier function
+            # those are used as targets, they have to be mapped to 0-49 right here:
+
+            novel_corresponding_labels = self.map_label(novel_corresponding_labels, novel_corresponding_labels)
+
+            if self.num_shots > 0:
+                # not generalized and at least 1 shot means normal FSL setting (use only unseen classes)
+                train_unseen_label = self.map_label(train_unseen_label, cls_novelclasses)
+
+            # for FSL, we train_seen contains the unseen class examples
+            # for ZSL, train seen label is not used
+            # if self.num_shots>0:
+            #    train_seen_label = self.map_label(train_seen_label,cls_novelclasses)
+
+            test_novel_label = self.map_label(test_novel_label, cls_novelclasses)
+
+            # map cls novelclasses last
+            cls_novelclasses = self.map_label(cls_novelclasses, cls_novelclasses)
+
+
+        if self.generalized:
+            print('mode: gzsl')
+            clf = LINEAR_LOGSOFTMAX(self.latent_size, self.num_classes)
+        else:
+            print('mode: zsl')
+            clf = LINEAR_LOGSOFTMAX(self.latent_size, self.num_novel_classes)
+
+
+        clf.apply(models.weights_init)
+
+        with torch.no_grad():
+
+            ####################################
+            # preparing the test set
+            # convert raw test data into z vectors
+            ####################################
+
+            self.reparameterize_with_noise = False
+
+            mu1, var1 = self.encoder['resnet_features'](novel_test_feat)
+            test_novel_X = self.reparameterize(mu1, var1).to(self.device).data
+            test_novel_Y = test_novel_label.to(self.device)
+
+            mu2, var2 = self.encoder['resnet_features'](seen_test_feat)
+            test_seen_X = self.reparameterize(mu2, var2).to(self.device).data
+            test_seen_Y = test_seen_label.to(self.device)
+
+            ####################################
+            # preparing the train set:
+            # chose n random image features per
+            # class. If n exceeds the number of
+            # image features per class, duplicate
+            # some. Next, convert them to
+            # latent z features.
+            ####################################
+
+            self.reparameterize_with_noise = True
+
+            def sample_train_data_on_sample_per_class_basis(features, label, sample_per_class):
+                sample_per_class = int(sample_per_class)
+
+                if sample_per_class != 0 and len(label) != 0:
+
+                    classes = label.unique()
+
+                    for i, s in enumerate(classes):
+
+                        features_of_that_class = features[label == s, :]  # order of features and labels must coincide
+                        # if number of selected features is smaller than the number of features we want per class:
+                        multiplier = torch.ceil(torch.cuda.FloatTensor(
+                            [max(1, sample_per_class / features_of_that_class.size(0))])).long().item()
+
+                        features_of_that_class = features_of_that_class.repeat(multiplier, 1)
+
+                        if i == 0:
+                            features_to_return = features_of_that_class[:sample_per_class, :]
+                            labels_to_return = s.repeat(sample_per_class)
+                        else:
+                            features_to_return = torch.cat(
+                                (features_to_return, features_of_that_class[:sample_per_class, :]), dim=0)
+                            labels_to_return = torch.cat((labels_to_return, s.repeat(sample_per_class)),
+                                                         dim=0)
+
+                    return features_to_return, labels_to_return
+                else:
+                    return torch.cuda.FloatTensor([]), torch.cuda.LongTensor([])
+
+
+            # some of the following might be empty tensors if the specified number of
+            # samples is zero :
+
+            img_seen_feat,   img_seen_label   = sample_train_data_on_sample_per_class_basis(
+                train_seen_feat,train_seen_label,self.img_seen_samples )
+
+            img_unseen_feat, img_unseen_label = sample_train_data_on_sample_per_class_basis(
+                train_unseen_feat, train_unseen_label, self.img_unseen_samples )
+
+            att_unseen_feat, att_unseen_label = sample_train_data_on_sample_per_class_basis(
+                    novelclass_aux_data,
+                    novel_corresponding_labels,self.att_unseen_samples )
+
+            att_seen_feat, att_seen_label = sample_train_data_on_sample_per_class_basis(
+                seenclass_aux_data,
+                seen_corresponding_labels, self.att_seen_samples)
+
+            def convert_datapoints_to_z(features, encoder):
+                if features.size(0) != 0:
+                    mu_, logvar_ = encoder(features)
+                    z = self.reparameterize(mu_, logvar_)
+                    return z
+                else:
+                    return torch.cuda.FloatTensor([])
+
+            z_seen_img   = convert_datapoints_to_z(img_seen_feat, self.encoder['resnet_features'])
+            z_unseen_img = convert_datapoints_to_z(img_unseen_feat, self.encoder['resnet_features'])
+
+            z_seen_att = convert_datapoints_to_z(att_seen_feat, self.encoder[self.auxiliary_data_source])
+            z_unseen_att = convert_datapoints_to_z(att_unseen_feat, self.encoder[self.auxiliary_data_source])
+
+            train_Z = [z_seen_img, z_unseen_img ,z_seen_att    ,z_unseen_att]
+            train_L = [img_seen_label    , img_unseen_label,att_seen_label,att_unseen_label]
+
+            # empty tensors are sorted out
+            train_X = [train_Z[i] for i in range(len(train_Z)) if train_Z[i].size(0) != 0]
+            train_Y = [train_L[i] for i in range(len(train_L)) if train_Z[i].size(0) != 0]
+
+            train_X = torch.cat(train_X, dim=0)
+            train_Y = torch.cat(train_Y, dim=0)
+
+        ############################################################
+        ##### initializing the classifier and train one epoch
+        ############################################################
+
+        cls = classifier.CLASSIFIER(clf, train_X, train_Y, test_seen_X, test_seen_Y, test_novel_X,
+                                    test_novel_Y,
+                                    cls_seenclasses, cls_novelclasses,
+                                    self.num_classes, self.device, self.lr_cls, 0.5, 1,
+                                    self.classifier_batch_size,
+                                    self.generalized)
+
+        for k in range(self.cls_train_epochs):
+            if k > 0:
+                if self.generalized:
+                    cls.acc_seen, cls.acc_novel, cls.H = cls.fit()
+                else:
+                    cls.acc = cls.fit_zsl()
+
+            if self.generalized:
+
+                print('[%.1f]     novel=%.4f, seen=%.4f, h=%.4f , loss=%.4f' % (
+                k, cls.acc_novel, cls.acc_seen, cls.H, cls.average_loss))
+
+                history.append([torch.tensor(cls.acc_seen).item(), torch.tensor(cls.acc_novel).item(),
+                                torch.tensor(cls.H).item()])
+
+            else:
+                print('[%.1f]  acc=%.4f ' % (k, cls.acc))
+                history.append([0, torch.tensor(cls.acc).item(), 0])
+
+        if self.generalized:
+            return torch.tensor(cls.acc_seen).item(), torch.tensor(cls.acc_novel).item(), torch.tensor(
+                cls.H).item(), history
+        else:
+            return 0, torch.tensor(cls.acc).item(), 0, history

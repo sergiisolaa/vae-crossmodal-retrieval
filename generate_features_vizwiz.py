@@ -196,6 +196,7 @@ bert = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = Tru
             
 ntest = len(test_imgs)
 
+print(len(train_imgs))
 y = 0
 for i in range(0, len(train_imgs), 20):
     
@@ -212,8 +213,11 @@ for i in range(0, len(train_imgs), 20):
     idx = np.arange(i,i + 20)
     
     j = 0
-    for x in idx:
-        print(x)
+    for x in idx:    
+        
+        if x >= len(train_imgs):
+            continue
+        
         imfile = os.path.join(image_path,'train',train_imgs[x])
         #print(imfile)
         image = Image.open(imfile).resize((imagesize, imagesize))
@@ -349,7 +353,11 @@ for i in range(0, ntest, 20):
     
     j = 0
     for x in idx:
-        imfile = os.path.join(image_path,'test',test_imgs[x])
+        
+        if x >= len(test_imgs):
+            continue
+        
+        imfile = os.path.join(image_path,'val',test_imgs[x])
         #print(imfile)
         image = Image.open(imfile).resize((imagesize, imagesize))
         #image = torch.from_numpy(np.array(image, np.float32)).float()

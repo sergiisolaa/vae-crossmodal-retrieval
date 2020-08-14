@@ -92,6 +92,8 @@ test_sents_ids = {}
         
 print(path)
 attr_filename = os.path.join(path,'annotations', 'captions_train2014.json')
+
+print('Loading train')
 with open(attr_filename) as f:
     json_data = json.loads(f.read())
     image_list = json_data['images']
@@ -103,6 +105,7 @@ with open(attr_filename) as f:
         train_imgs.append(images['file_name'])
         train_imgs_id.append(images['id'])
         
+        print(str(images['id']))
         train_sentences[images['id']] = []
         for caption in captions_list:
             if caption['image_id'] == images['id']:
@@ -117,7 +120,8 @@ with open(attr_filename) as f:
                     voc.add_sentence(tokens_l)
                     
     f.close()
-   
+
+print('Loading validation/test')
 attr_filename = os.path.join(path,'annotations', 'captions_val2014.json')
 with open(attr_filename) as f:
     json_data = json.loads(f.read())
@@ -129,6 +133,8 @@ with open(attr_filename) as f:
     for images in image_list:
         val_imgs.append(images['file_name'])
         val_imgs_id.append(images['id'])
+        
+        print(str(images['id']))
         
         val_sentences[images['id']] = []
         for caption in captions_list:
@@ -194,9 +200,11 @@ bert = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = Tru
             
 ntest = len(test_imgs_id)
 
+print('Generating features for training')
 y = 0
 for i in range(0, len(train_imgs_id), 20):
     
+    print(i)
         
     #Obrir imatges
     zero_attrs = []
@@ -211,9 +219,13 @@ for i in range(0, len(train_imgs_id), 20):
     
     j = 0
     for x in idx:
+        
+        if x >= len(train_imgs):
+            continue
+        
         imfile = os.path.join(image_path,'train2014',train_imgs[x])
         #print(imfile)
-        image = Image.open(imfile).resize((imagesize, imagesize))
+        image = Image.open(imfile).resize((imagesize, imagesize)).convert('RGB')
         #image = torch.from_numpy(np.array(image, np.float32)).float()
         image = np.array(image, np.float32)[np.newaxis,...]
                 
@@ -231,9 +243,13 @@ for i in range(0, len(train_imgs_id), 20):
             
         k = 0
         
+        print(len(sentences))
         for sent in sentences:
             raws = sent["caption"]
-                
+            
+            if k >= 5:
+                continue
+            
             if attr == 'attributes':
                 sent_idxs = []
                     
@@ -264,6 +280,8 @@ for i in range(0, len(train_imgs_id), 20):
                 hidden_states = outputs[2]
                 token_vecs = hidden_states[-2][0]
                 sentence_embedding = torch.mean(token_vecs, dim=0)
+                
+                print(k)
                 attr_vec[k,:] = sentence_embedding
             
             k += 1
@@ -280,6 +298,8 @@ for i in range(0, len(train_imgs_id), 20):
             #print(attr_vec.shape)
             batch_att = np.concatenate((batch_att,attr_vec), axis = 0)
             batch_images = np.asarray(batch_images)
+            print(batch_images.shape)
+            print(image.shape)
             batch_images = np.concatenate((batch_images, image), axis = 0)
             #print(batch_att.shape)
             #print(raws_r)
@@ -308,7 +328,7 @@ for i in range(0, len(train_imgs_id), 20):
     y = y + 1
 
 
-
+print('Saving features for training')
 if attr == 'attributes':
     with open('attr_training_mscoco.pkl','wb') as ft:
         pickle.dump([total_att], ft)
@@ -327,12 +347,15 @@ elif attr == 'bert':
         pickle.dump([total_att], ft)
         ft.close()
 
+print('Generating features for test')
 y = 0
 for i in range(0, ntest, 20):
     if attr == 'attributes':
         stop_words = set(nltk.corpus.stopwords.words('english')) 
         lemmatizer = WordNetLemmatizer() 
-        
+    
+    print(i)
+    
     #Obrir imatges
     zero_attrs = []
     batch_images = []
@@ -346,9 +369,13 @@ for i in range(0, ntest, 20):
     
     j = 0
     for x in idx:
+        
+        if x >= len(train_imgs):
+            continue
+        
         imfile = os.path.join(image_path,'test2014',test_imgs[x])
         #print(imfile)
-        image = Image.open(imfile).resize((imagesize, imagesize))
+        image = Image.open(imfile).resize((imagesize, imagesize)).convert('RGB')
         #image = torch.from_numpy(np.array(image, np.float32)).float()
         image = np.array(image, np.float32)[np.newaxis,...]
                 
@@ -364,11 +391,14 @@ for i in range(0, ntest, 20):
         elif attr == 'bert':
             attr_vec = torch.zeros((5, 768))
             
-        
+        print(len(sentences))
         k = 0
         for sent in sentences:
             raws = sent["caption"]
-                
+            
+            if k >= 5:
+                continue
+            
             if attr == 'attributes':
                 sent_idxs = []
                     
@@ -396,6 +426,7 @@ for i in range(0, ntest, 20):
                 hidden_states = outputs[2]
                 token_vecs = hidden_states[-2][0]
                 sentence_embedding = torch.mean(token_vecs, dim=0)
+                print(k)
                 attr_vec[k,:] = sentence_embedding
             
             k += 1
@@ -438,6 +469,7 @@ for i in range(0, ntest, 20):
     
     y = y + 1
 
+print('Saving features for test')
 if attr == 'attributes':
     with open('attr_test_mscoco.pkl','wb') as ft:
         pickle.dump([total_att], ft)

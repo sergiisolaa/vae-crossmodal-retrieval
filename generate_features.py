@@ -26,7 +26,6 @@ nltk.download('stopwords')
 nltk.download('wordnet')
 from nltk.stem import WordNetLemmatizer 
 
-dataset = 'MSCOCO' #'MSCOCO', 'VizWiz'
 
 device = 'cuda'
 imagesize = 224
@@ -39,9 +38,9 @@ if folder[-5:] == 'model':
 else:
     project_directory = folder
         
-path = os.path.join(project_directory,'data',dataset)
+path = os.path.join(project_directory,'data','flickr30k')
         
-image_path = os.path.join(path,'train2014')
+image_path = os.path.join(path,'images')
 print('The images folder is')
 print(image_path)
         
@@ -66,13 +65,12 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
     
-#feature_extractor_all = torchModels.resnet101(pretrained = True)
-#feature_extractor = nn.Sequential(*list(feature_extractor_all.children())[:-2])
-
-feature_extractor = torchModels.resnet101(pretrained = True)
-        
+feature_extractor_all = torchModels.resnet101(pretrained = True)
+feature_extractor = nn.Sequential(*list(feature_extractor_all.children())[:-2])
+   
+'''     
 num_ftrs = feature_extractor.fc.in_features
-feature_extractor.fc = Identity()
+feature_extractor.fc = Identity()'''
 feature_extractor.to(device)
         
 train_imgs = []
@@ -91,96 +89,50 @@ test_sentences = {}
 test_sents_ids = {}
         
 print(path)
-attr_filename = os.path.join(path,'annotations', 'captions_train2014.json')
+attr_filename = os.path.join(path,'dataset.json')
 with open(attr_filename) as f:
     json_data = json.loads(f.read())
     image_list = json_data['images']
-    captions_list = json_data['annotations']
             
     voc = VocabularyTokens('train')
             
     for images in image_list:
-        train_imgs.append(images['file_name'])
-        train_imgs_id.append(images['id'])
-        
-        train_sentences[images['id']] = []
-        for caption in captions_list:
-            if caption['image_id'] == images['id']:
-                train_sentences[images['id']].append(caption)
-                
-                if attr == 'attributes':
-                    sentence = caption['caption']
-                    tokens = nltk.tokenize.word_tokenize(str(sentence).lower())
-                    tokens_r = [w for w in tokens if not w in stop_words] 
-                    tokens_l = [lemmatizer.lemmatize(w) for w in tokens_r]
-                
-                    voc.add_sentence(tokens_l)
+        if images['split'] == 'train':
+            train_imgs.append(images['filename'])
+            train_imgs_id.append(images['imgid'])
                     
-    f.close()
-   
-attr_filename = os.path.join(path,'annotations', 'captions_val2014.json')
-with open(attr_filename) as f:
-    json_data = json.loads(f.read())
-    image_list = json_data['images']
-    captions_list = json_data['annotations']
-            
-    voc = VocabularyTokens('train')
-            
-    for images in image_list:
-        val_imgs.append(images['file_name'])
-        val_imgs_id.append(images['id'])
-        
-        val_sentences[images['id']] = []
-        for caption in captions_list:
-            if caption['image_id'] == images['id']:
-                val_sentences[images['id']].append(caption)
+            sentences = images['sentences']
+            sents_ids = []
                     
-    f.close()
-
-attr_filename = os.path.join(path,'annotationsTest', 'image_info_test2014.json')
-with open(attr_filename) as f:
-    json_data = json.loads(f.read())
-    image_list = json_data['images']
-    captions_list = json_data['annotations']
-            
-    voc = VocabularyTokens('train')
-            
-    for images in image_list:
-        test_imgs.append(images['file_name'])
-        test_imgs_id.append(images['id'])
-        
-        test_sentences[images['id']] = []
-        for caption in captions_list:
-            if caption['image_id'] == images['id']:
-                test_sentences[images['id']].append(caption)
-                
+            train_sentences[images['imgid']] = []
+            for sent in sentences:
+                train_sentences[images['imgid']].append(sent)
+                voc.add_sentence(sent['tokens'])
                     
-    f.close()
-    
-    # '''                
-    # elif images['split'] == 'val':
-    #     val_imgs.append(images['filename'])
-    #     val_imgs_id.append(images['imgid'])
-                    
-    #     sentences = images['sentences']
-    #     sents_ids = []
-                    
-    #     val_sentences[images['imgid']] = []
-    #     for sent in sentences:
-    #         val_sentences[images['imgid']].append(sent)
                         
-    # elif images['split'] == 'test':
-    #     test_imgs.append(images['filename'])
-    #     test_imgs_id.append(images['imgid'])
+        elif images['split'] == 'val':
+            val_imgs.append(images['filename'])
+            val_imgs_id.append(images['imgid'])
                     
-    #     sentences = images['sentences']
-    #     sents_ids = []
+            sentences = images['sentences']
+            sents_ids = []
                     
-    #     test_sentences[images['imgid']] = []
-    #     for sent in sentences:
-    #         test_sentences[images['imgid']].append(sent)'''
+            val_sentences[images['imgid']] = []
+            for sent in sentences:
+                val_sentences[images['imgid']].append(sent)
+                        
+        elif images['split'] == 'test':
+            test_imgs.append(images['filename'])
+            test_imgs_id.append(images['imgid'])
+                    
+            sentences = images['sentences']
+            sents_ids = []
+                    
+            test_sentences[images['imgid']] = []
+            for sent in sentences:
+                test_sentences[images['imgid']].append(sent)
                 
-    
+    f.close()
             
 #voc.obtain_topK(self.K)
 voc.obtain_voc(T)            
@@ -195,7 +147,9 @@ ntest = len(test_imgs_id)
 
 y = 0
 for i in range(0, len(train_imgs_id), 20):
-    
+    if attr == 'attributes':
+        stop_words = set(nltk.corpus.stopwords.words('english')) 
+        lemmatizer = WordNetLemmatizer() 
         
     #Obrir imatges
     zero_attrs = []
@@ -210,7 +164,7 @@ for i in range(0, len(train_imgs_id), 20):
     
     j = 0
     for x in idx:
-        imfile = os.path.join(image_path,'train2014',train_imgs[x])
+        imfile = os.path.join(image_path,train_imgs[x])
         #print(imfile)
         image = Image.open(imfile).resize((imagesize, imagesize))
         #image = torch.from_numpy(np.array(image, np.float32)).float()
@@ -231,7 +185,7 @@ for i in range(0, len(train_imgs_id), 20):
         k = 0
         
         for sent in sentences:
-            raws = sent["caption"]
+            raws = sent["raw"]
                 
             if attr == 'attributes':
                 sent_idxs = []
@@ -306,22 +260,15 @@ for i in range(0, len(train_imgs_id), 20):
     
     y = y + 1
 
-
+with open('ft_bert_training.pkl','wb') as f:
+    pickle.dump([total_features], f)
+    f.close()
 
 if attr == 'attributes':
     with open('attr_training.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
-    
-    with open('ft_attributes_training.pkl','wb') as f:
-        pickle.dump([total_features], f)
-        f.close()
-        
 elif attr == 'bert':
-    with open('ft_bert_training.pkl','wb') as f:
-        pickle.dump([total_features], f)
-        f.close()
-        
     with open('bert_training.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
@@ -345,7 +292,7 @@ for i in range(0, ntest, 20):
     
     j = 0
     for x in idx:
-        imfile = os.path.join(image_path,'test2014',test_imgs[x])
+        imfile = os.path.join(image_path,test_imgs[x])
         #print(imfile)
         image = Image.open(imfile).resize((imagesize, imagesize))
         #image = torch.from_numpy(np.array(image, np.float32)).float()
@@ -366,7 +313,7 @@ for i in range(0, ntest, 20):
         
         k = 0
         for sent in sentences:
-            raws = sent["caption"]
+            raws = sent["raw"]
                 
             if attr == 'attributes':
                 sent_idxs = []
@@ -437,20 +384,15 @@ for i in range(0, ntest, 20):
     
     y = y + 1
 
+with open('ft_bert_test.pkl','wb') as f:
+    pickle.dump([total_features], f)
+    f.close()
+
 if attr == 'attributes':
     with open('attr_test.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()
-    
-    with open('ft_attributes_test.pkl','wb') as f:
-        pickle.dump([total_features], f)
-        f.close()
-        
 elif attr == 'bert':
-    with open('ft_bert_test.pkl','wb') as f:
-        pickle.dump([total_features], f)
-        f.close()
-        
     with open('bert_test.pkl','wb') as ft:
         pickle.dump([total_att], ft)
         ft.close()

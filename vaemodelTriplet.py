@@ -1,5 +1,9 @@
 #vaemodel
+import os
+from pathlib import Path
 import copy
+import json
+
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
@@ -18,6 +22,15 @@ from scipy.spatial import distance
 import numpy as np
 
 import matplotlib.pyplot as plt
+from matplotlib.pyplot import imshow
+#import rasterfairy
+from PIL import Image
+
+folder = str(Path(os.getcwd()))
+if folder[-5:] == 'model':
+    project_directory = Path(os.getcwd()).parent
+else:
+    project_directory = folder
 
 class LINEAR_LOGSOFTMAX(nn.Module):
     def __init__(self, input_dim, nclass):
@@ -102,11 +115,13 @@ class Model(nn.Module):
         for datatype in self.all_data_sources:
             parameters_to_optimize +=  list(self.encoder[datatype].parameters())
             parameters_to_optimize +=  list(self.decoder[datatype].parameters())
+            
         parameters_to_optimize += list(self.fc_ft.parameters())
         parameters_to_optimize += list(self.fc_at.parameters())
         parameters_to_optimize += list(self.ft_bn.parameters())
         parameters_to_optimize += list(self.at_bn.parameters())
         
+              
         
         self.optimizer  = optim.Adam( parameters_to_optimize ,lr=hyperparameters['lr_gen_model'], betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=True)
 
@@ -288,6 +303,18 @@ class Model(nn.Module):
         metricsI = []
         metricsT = []
         
+        test_imgs = []
+        
+        PATH = os.path.join(project_directory,'data','flickr30k')
+        
+        with open(os.path.join(PATH,'dataset.json')) as f:
+            json_data = json.loads(f.read())
+            image_list = json_data['images']
+            
+            for images in image_list:
+                if images['split'] == 'test':
+                    test_imgs.append(images['filename'])
+                    
         
         print('train for reconstruction')
         for epoch in range(0, self.nepoch ):
@@ -360,9 +387,75 @@ class Model(nn.Module):
             
             
             plt.scatter(z_imgs_embedded[:,0], z_imgs_embedded[:,1], c = 'red')
-            plt.scatter(z_attrs_embedded[:,0], z_attrs_embedded[:,1], c = 'blue')
-            filename = 't-sne-plot-epoch'+str(epoch)+'.png'
+            filename = 't-sne-plot-epoch'+str(epoch)+'-images.png'
             plt.savefig(filename)
+            plt.clf()
+            plt.scatter(z_attrs_embedded[:,0], z_attrs_embedded[:,1], c = 'blue')
+            filename = 't-sne-plot-epoch'+str(epoch)+'-attr.png'
+            plt.savefig(filename)
+            plt.clf()
+            
+            tx_imgs = z_imgs_embedded[:,0]
+            ty_imgs = z_imgs_embedded[:,1]
+            tx_attrs = z_attrs_embedded[:,0]
+            ty_attrs = z_attrs_embedded[:,1]
+            
+            tx_imgs = (tx_imgs-np.min(tx_imgs))/(np.max(tx_imgs)-np.min(tx_imgs))
+            ty_imgs = (ty_imgs-np.min(ty_imgs))/(np.max(ty_imgs)-np.min(ty_imgs))
+            
+            nx = 40
+            ny = 25
+            w = 72
+            h = 56
+            ar = float(w)/h
+            
+            full_image = Image.new('RGBA', (4000, 3000))
+            grid_image = Image.new('RGB', (w*nx, h*ny))
+            
+            grid_assignment = rasterfairy.transformPointCloud2D(z_imgs_embedded,target=(nx,ny))
+            
+            for z in range(0, self.dataset.ntest):
+                
+                tile = Image.open(os.path.join(PATH,'images', test_imgs[z])).convert('RGB')
+                
+                imshow(tile)
+                
+                rs = max(1,tile.width/100, tile.height/100)
+                tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
+                
+                full_image.paste(tile, (int((4000 - 100)*tx_imgs[z]), int((3000 - 100)*ty_imgs[z])), mask = tile.convert('RGBA'))
+                
+                idx_x, idx_y = grid_assignment[0][z]
+                x, y = w*idx_x, h*idx_y
+                
+                tile_ar = float(tile.width)/tile.height
+                
+                if tile_ar > ar:
+                    margin = 0.5*(tile.width - ar*tile.height)
+                    tile = tile.crop((margin, 0, margin + ar*tile.height, tile.height))
+                    
+                else:
+                    margin = 0.5*(tile.height - float(tile.width)/ar)
+                    tile = tile.crop((0,margin,tile.width, margin+float(tile.width)/ar))
+                
+                tile = tile.resize((w,h), Image.ANTIALIAS)
+                grid_image.paste(tile,(int(x), int(y)))
+                    
+                
+                
+                
+            plt.figure(figsize= (16,12))
+            imshow(full_image)
+            
+            filename = 'Image-t-sne-plot-epoch'+str(epoch)+'-images.png'
+            full_image.save(filename)
+            plt.clf()
+            
+            
+            plt.figure(figsize = (16,12))
+            imshow(grid_image)
+            filename = 'GridImage-t-sne-plot-epoch'+str(epoch)+'-images.png'
+            grid_image.save(filename)
             plt.clf()
             
             
@@ -384,8 +477,6 @@ class Model(nn.Module):
             self.decoder[key].eval()
         
         
-        import os
-
         file_name = "losses-ANTriplet.png"
         file_name2 = 'metrics-ANTriplet.png'
         if os.path.isfile(file_name):
