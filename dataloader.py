@@ -248,6 +248,8 @@ class MSCOCO(object):
           
         idx = torch.arange(y*batch_size, (y + 1)*batch_size, 1)
         
+        idx = idx[idx < self.ntest]
+        
         batch_imgs = self.fts_test[0][idx,:]
         
         idx_at = 5*idx 

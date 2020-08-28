@@ -384,7 +384,7 @@ class Model(nn.Module):
             print('Generating t-SNE plot...')    
             z_imgs_embedded = TSNE(n_components=2).fit_transform(self.gallery_imgs_z.clone().cpu().detach())
             z_attrs_embedded = TSNE(n_components=2).fit_transform(self.gallery_attrs_z.clone().cpu().detach())
-            
+            '''
             
             plt.scatter(z_imgs_embedded[:,0], z_imgs_embedded[:,1], c = 'red')
             filename = 't-sne-plot-epoch'+str(epoch)+'-images.png'
@@ -403,61 +403,33 @@ class Model(nn.Module):
             tx_imgs = (tx_imgs-np.min(tx_imgs))/(np.max(tx_imgs)-np.min(tx_imgs))
             ty_imgs = (ty_imgs-np.min(ty_imgs))/(np.max(ty_imgs)-np.min(ty_imgs))
             
-            nx = 40
-            ny = 25
-            w = 72
-            h = 56
-            ar = float(w)/h
+            
             
             full_image = Image.new('RGBA', (4000, 3000))
-            grid_image = Image.new('RGB', (w*nx, h*ny))
+            #grid_image = Image.new('RGB', (w*nx, h*ny))
             
-            grid_assignment = rasterfairy.transformPointCloud2D(z_imgs_embedded,target=(nx,ny))
+            #grid_assignment = rasterfairy.transformPointCloud2D(z_imgs_embedded,target=(nx,ny))
             
             for z in range(0, self.dataset.ntest):
                 
                 tile = Image.open(os.path.join(PATH,'images', test_imgs[z])).convert('RGB')
                 
-                imshow(tile)
                 
                 rs = max(1,tile.width/100, tile.height/100)
                 tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
                 
                 full_image.paste(tile, (int((4000 - 100)*tx_imgs[z]), int((3000 - 100)*ty_imgs[z])), mask = tile.convert('RGBA'))
-                
-                idx_x, idx_y = grid_assignment[0][z]
-                x, y = w*idx_x, h*idx_y
-                
-                tile_ar = float(tile.width)/tile.height
-                
-                if tile_ar > ar:
-                    margin = 0.5*(tile.width - ar*tile.height)
-                    tile = tile.crop((margin, 0, margin + ar*tile.height, tile.height))
-                    
-                else:
-                    margin = 0.5*(tile.height - float(tile.width)/ar)
-                    tile = tile.crop((0,margin,tile.width, margin+float(tile.width)/ar))
-                
-                tile = tile.resize((w,h), Image.ANTIALIAS)
-                grid_image.paste(tile,(int(x), int(y)))
+                               
                     
                 
                 
                 
             plt.figure(figsize= (16,12))
-            imshow(full_image)
             
-            filename = 'Image-t-sne-plot-epoch'+str(epoch)+'-images.png'
+            filename = 'Image-t-sne-plot-epoch'+str(epoch)+'-images-Triplet.png'
             full_image.save(filename)
             plt.clf()
-            
-            
-            plt.figure(figsize = (16,12))
-            imshow(grid_image)
-            filename = 'GridImage-t-sne-plot-epoch'+str(epoch)+'-images.png'
-            grid_image.save(filename)
-            plt.clf()
-            
+            '''
             
             print('Evaluating retrieval...')
             metricsIepoch, metricsTepoch = self.retrieval()
@@ -664,7 +636,7 @@ class Model(nn.Module):
               
             
             data_from_modalities = [features, attributes.type(torch.FloatTensor)]
-
+            
             for j in range(len(data_from_modalities)):
                 data_from_modalities[j] = data_from_modalities[j].to(self.device)
                 data_from_modalities[j].requires_grad = False
