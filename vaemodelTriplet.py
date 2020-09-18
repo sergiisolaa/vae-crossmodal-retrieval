@@ -66,6 +66,7 @@ class Model(nn.Module):
        # self.img_unseen_samples = hyperparameters['samples_per_class'][self.DATASET][3]
         self.reco_loss_function = hyperparameters['loss']
         self.margin = hyperparameters['margin_loss']
+        self.weight = torch.Tensor([hyperparameters['weight_loss']]).to(self.device)
         self.nepoch = hyperparameters['epochs']
         self.lr_cls = hyperparameters['lr_cls']
         self.cross_reconstruction = hyperparameters['model_specifics']['cross_reconstruction']
@@ -171,11 +172,11 @@ class Model(nn.Module):
         att_in = self.fc_at(att_in)   
         
         #Add non-linearity?
-        
+                
         
         mu_img, logvar_img = self.encoder['resnet_features'](img_in)
         z_from_img = self.reparameterize(mu_img, logvar_img)
-
+        
         mu_att, logvar_att = self.encoder[self.auxiliary_data_source](att_in)
         z_from_att = self.reparameterize(mu_att, logvar_att)
 
@@ -183,7 +184,7 @@ class Model(nn.Module):
         # Reconstruct inputs
         ##############################################
 
-        img_from_img = self.decoder['resnet_features'](z_from_img)
+        img_from_img = self.decoder['resnet_features'](mu_img)
         att_from_att = self.decoder[self.auxiliary_data_source](z_from_att)
         
         
@@ -222,6 +223,7 @@ class Model(nn.Module):
         lossI = []
         lossT = []
         
+               
         for j in range(0, mu_img.shape[0]-1):
             perm = torch.arange(0, mu_img.shape[0])
             perm = perm + j
@@ -238,12 +240,16 @@ class Model(nn.Module):
             mu_att_perm.cpu()
             mu_img_perm.cpu()
     
-        losI = sum(lossI)/len(lossI)
-        losT = sum(lossT)/len(lossT)
+        #losI = sum(lossI)/len(lossI)
+        losI = sum(lossI)
+        #losT = sum(lossT)/len(lossT)
+        losT = sum(lossT)
         
+        #distance = losI.to(self.device)*self.weight + losT.to(self.device)*(1-self.weight)
         distance = losI.to(self.device) + losT.to(self.device)
                      
-        
+        #distance += torch.sum(torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
+        #distance = torch.sqrt(distance)
 
         ##############################################
         # scale the loss terms according to the warmup
@@ -381,11 +387,12 @@ class Model(nn.Module):
             print('Generating gallery set...')
             self.generate_gallery()
             
+            '''
             print('Generating t-SNE plot...')    
             z_imgs_embedded = TSNE(n_components=2).fit_transform(self.gallery_imgs_z.clone().cpu().detach())
             z_attrs_embedded = TSNE(n_components=2).fit_transform(self.gallery_attrs_z.clone().cpu().detach())
             '''
-            
+            '''
             plt.scatter(z_imgs_embedded[:,0], z_imgs_embedded[:,1], c = 'red')
             filename = 't-sne-plot-epoch'+str(epoch)+'-images.png'
             plt.savefig(filename)
