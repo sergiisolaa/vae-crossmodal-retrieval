@@ -166,6 +166,7 @@ class VocabularyTokens:
                 self.word2count.pop(word)
                 self.index2word.pop(idx)
                 self.num_words -= 1 
+                print(idx)
         
         y = 0
         self.word2index = {}
@@ -174,5 +175,6 @@ class VocabularyTokens:
             self.word2index[x] = y 
             self.index2word[y] = x 
             y = y + 1
+            print(y)
         
         

@@ -1,7 +1,7 @@
 
 ### execute this function to train and test the vae-model
 
-from vaemodelTripletVizWiz import Model
+from vaemodelTriplet import Model
 import numpy as np
 import pickle
 import torch
@@ -39,10 +39,10 @@ hyperparameters = {
                        'warmup': {'beta': {'factor': 0.01,#0.25
                                            'end_epoch': 93, #93
                                            'start_epoch': 0},
-                                  'cross_reconstruction': {'factor':0,#2.71
+                                  'cross_reconstruction': {'factor':5,#2.71
                                                            'end_epoch': 75,#75
                                                            'start_epoch': 21},#21
-                                  'distance': {'factor': 8.13, #8.13
+                                  'distance': {'factor': 100, #8.13
                                                'end_epoch': 25,#22
                                                'start_epoch': 10}}},#6
 
@@ -56,7 +56,7 @@ hyperparameters = {
                               'FLO': (200, 0, 400, 0),
                               'AWA1': (200, 0, 400, 0)},
     'epochs': 100,
-    'loss': 'l1',
+    'loss': 'l2',
     'auxiliary_data_source' : 'attributes',
     'attr': 'bert',
     'lr_cls': 0.001,
@@ -65,8 +65,8 @@ hyperparameters = {
                         'attributes': (1450, 665),
                         'sentences': (1450, 665) },
     'latent_size': 64,
-    'margin_loss': 2,
-    'weight_loss'
+    'margin_loss': 8,
+    'weight_loss': 0.7
 }
 
 # The training epochs for the final classifier, for early stopping,
@@ -176,14 +176,11 @@ for d in model.all_data_sources_without_duplicates:
 hyperparameters['attr'] = 'bert' #Bert
 hyperparameters['loss'] = 'l2' #l2
 hyperparameters['lr_gen_model'] = 0.0001 #0.00005
-hyperparameters['model_specifics']['warmup']['beta']['factor'] = 0.0001
 hyperparameters['latent_size'] = 64
 hyperparameters['model_specifics']['warmup']['beta']['factor'] = 0.01
-hyperparameters['model_specifics']['warmup']['cross_reconstruction']['factor'] = 5
     
-for d in [1, 2, 10, 15, 25, 50]:
-    
-    hyperparameters['model_specifics']['warmup']['distance']['factor'] = d
+for w in [0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9]:
+    hyperparameters['model_specifics']['weight_loss'] = w
         
                            
     torch.cuda.empty_cache()

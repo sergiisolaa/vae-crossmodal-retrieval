@@ -172,11 +172,13 @@ class Model(nn.Module):
         #Add non-linearity?
         
         
-        mu_img, logvar_img = self.encoder['resnet_features'](img_in)
-        z_from_img = self.reparameterize(mu_img, logvar_img)
+        #mu_img, logvar_img = self.encoder['resnet_features'](img_in)
+        mu_img = self.encoder['resnet_features'](img_in)
+        #z_from_img = self.reparameterize(mu_img, logvar_img)
 
-        mu_att, logvar_att = self.encoder[self.auxiliary_data_source](att_in)
-        z_from_att = self.reparameterize(mu_att, logvar_att)
+        #mu_att, logvar_att = self.encoder[self.auxiliary_data_source](att_in)
+        mu_att = self.encoder[self.auxiliary_data_source](att_in)
+        #z_from_att = self.reparameterize(mu_att, logvar_att)
 
         ##############################################
         # Reconstruct inputs
@@ -206,16 +208,17 @@ class Model(nn.Module):
         ##############################################
         # KL-Divergence
         ##############################################
-
+        '''
         KLD = (0.5 * torch.sum(1 + logvar_att - mu_att.pow(2) - logvar_att.exp())) \
               + (0.5 * torch.sum(1 + logvar_img - mu_img.pow(2) - logvar_img.exp()))
-
+        '''
         ##############################################
         # Distribution Alignment
         ##############################################
-        distance = torch.sqrt(torch.sum((mu_img - mu_att) ** 2, dim=1) + \
-                              torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
-
+        #distance = torch.sqrt(torch.sum((mu_img - mu_att) ** 2, dim=1) + \
+        #                      torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
+        
+        distance = torch.sqrt(torch.sum((mu_img - mu_att) ** 2, dim=1)
         distance = distance.sum()
               
         #distanceI = torch.sum((mu_img - mu_att) ** 2, dim=1) 

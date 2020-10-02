@@ -65,12 +65,12 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
     
-feature_extractor_all = torchModels.resnet101(pretrained = True)
-feature_extractor = nn.Sequential(*list(feature_extractor_all.children())[:-2])
+feature_extractor = torchModels.resnet101(pretrained = True)
+#feature_extractor = nn.Sequential(*list(feature_extractor_all.children())[:-2])
    
-'''     
+     
 num_ftrs = feature_extractor.fc.in_features
-feature_extractor.fc = Identity()'''
+feature_extractor.fc = Identity()
 feature_extractor.to(device)
         
 train_imgs = []
@@ -132,21 +132,26 @@ with open(attr_filename) as f:
             for sent in sentences:
                 test_sentences[images['imgid']].append(sent)
                 
+            print(images['filename'])
+                
     f.close()
             
 #voc.obtain_topK(self.K)
 voc.obtain_voc(T)            
-            
+
+print('voc obtained')
 vocabulary = voc
 K = vocabulary.num_words
             
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case = True)
 bert = BertModel.from_pretrained('bert-base-uncased', output_hidden_states = True).to(device)
-            
+print('bert loaded')       
 ntest = len(test_imgs_id)
 
+'''
+print('starting opening things')
 y = 0
-for i in range(0, len(train_imgs_id), 20):
+for i in range(0, len(train_imgs_id), 50):
     if attr == 'attributes':
         stop_words = set(nltk.corpus.stopwords.words('english')) 
         lemmatizer = WordNetLemmatizer() 
@@ -273,8 +278,10 @@ elif attr == 'bert':
         pickle.dump([total_att], ft)
         ft.close()
 
+'''
+print('start opening more things')
 y = 0
-for i in range(0, ntest, 20):
+for i in range(0, ntest, 50):
     if attr == 'attributes':
         stop_words = set(nltk.corpus.stopwords.words('english')) 
         lemmatizer = WordNetLemmatizer() 

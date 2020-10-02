@@ -12,7 +12,7 @@ import torch.optim as optim
 import torch.autograd as autograd
 from torch.utils import data
 from data_loader import DATA_LOADER as dataloader
-from dataloader import MSCOCO as dataLoader
+from dataloader import VizWiz as dataLoader
 import final_classifier as  classifier
 import models
 from torchvision import models as torchModels
@@ -238,13 +238,15 @@ class Model(nn.Module):
             mu_att_perm.cpu()
             mu_img_perm.cpu()
     
-        losI = sum(lossI)/len(lossI)
-        losT = sum(lossT)/len(lossT)
+        #losI = sum(lossI)/len(lossI)
+        losI = sum(lossI)
+        #losT = sum(lossT)/len(lossT)
+        losT = sum(lossT)
         
         distance = losI.to(self.device) + losT.to(self.device)
                      
-        distance += torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1)
-        distance = torch.sqrt(distance)
+        #distance += torch.sum(torch.sum((torch.sqrt(logvar_img.exp()) - torch.sqrt(logvar_att.exp())) ** 2, dim=1))
+        #distance = torch.sqrt(distance)
 
         ##############################################
         # scale the loss terms according to the warmup
@@ -382,11 +384,12 @@ class Model(nn.Module):
             print('Generating gallery set...')
             self.generate_gallery()
             
+            '''
             print('Generating t-SNE plot...')    
             z_imgs_embedded = TSNE(n_components=2).fit_transform(self.gallery_imgs_z.clone().cpu().detach())
             z_attrs_embedded = TSNE(n_components=2).fit_transform(self.gallery_attrs_z.clone().cpu().detach())
             '''
-            
+            '''
             plt.scatter(z_imgs_embedded[:,0], z_imgs_embedded[:,1], c = 'red')
             filename = 't-sne-plot-epoch'+str(epoch)+'-images.png'
             plt.savefig(filename)
@@ -638,26 +641,25 @@ class Model(nn.Module):
             
             data_from_modalities = [features, attributes.type(torch.FloatTensor)]
             
-            with torch.no_grad():
-                for j in range(len(data_from_modalities)):
-                    data_from_modalities[j] = data_from_modalities[j].to(self.device)
-                    data_from_modalities[j].requires_grad = False
-                    if j== 0:
-                        #Add L2 norm and BatchNorm?
-                        data_from_modalities[j] = F.normalize(data_from_modalities[j], p=2, dim=1)
-                        data_from_modalities[j] = self.ft_bn(data_from_modalities[j])
-                        data_from_modalities[j] = self.fc_ft(data_from_modalities[j])
-                    elif j == 1: 
-                        #Add L2 norm and BatchNorm?
-                        data_from_modalities[j] = F.normalize(data_from_modalities[j], p=2, dim=1)
-                        data_from_modalities[j] = self.at_bn(data_from_modalities[j])
-                        data_from_modalities[j] = self.fc_at(data_from_modalities[j])
-                
-                mu_img, logvar_img = self.encoder['resnet_features'](data_from_modalities[0])
-                z_from_img = self.reparameterize(mu_img, logvar_img)
-                
-                mu_att, logvar_att = self.encoder['attributes'](data_from_modalities[1])
-                z_from_att = self.reparameterize(mu_att, logvar_att)
+            for j in range(len(data_from_modalities)):
+                data_from_modalities[j] = data_from_modalities[j].to(self.device)
+                data_from_modalities[j].requires_grad = False
+                if j== 0:
+                    #Add L2 norm and BatchNorm?
+                    data_from_modalities[j] = F.normalize(data_from_modalities[j], p=2, dim=1)
+                    data_from_modalities[j] = self.ft_bn(data_from_modalities[j])
+                    data_from_modalities[j] = self.fc_ft(data_from_modalities[j])
+                elif j == 1: 
+                    #Add L2 norm and BatchNorm?
+                    data_from_modalities[j] = F.normalize(data_from_modalities[j], p=2, dim=1)
+                    data_from_modalities[j] = self.at_bn(data_from_modalities[j])
+                    data_from_modalities[j] = self.fc_at(data_from_modalities[j])
+            
+            mu_img, logvar_img = self.encoder['resnet_features'](data_from_modalities[0])
+            z_from_img = self.reparameterize(mu_img, logvar_img)
+            
+            mu_att, logvar_att = self.encoder['attributes'](data_from_modalities[1])
+            z_from_att = self.reparameterize(mu_att, logvar_att)
                         
             
             if y == 0:

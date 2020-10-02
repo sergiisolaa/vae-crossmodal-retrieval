@@ -55,6 +55,7 @@ class encoder_template(nn.Module):
         logvar = self._logvar(h)
 
         return mu, logvar
+        #return mu
 
 class decoder_template(nn.Module):
 
