@@ -1,13 +1,17 @@
-
+ 
 ### execute this function to train and test the vae-model
 
-from vaemodel import Model
+
 import numpy as np
 import pickle
 import torch
 import os
 import argparse
 from pathlib import Path
+
+from sklearn.manifold import TSNE
+
+from vaemodelTriplet import Model
 
 from evalModel import Evaluate
 
@@ -30,11 +34,12 @@ parser.add_argument('--num_shots',type=int, default = 0)
 parser.add_argument('--generalized', type = str2bool, default = True)
 args = parser.parse_args()
 
-training = True
+training = False
 
 evalR = True
+classes = False
 
-printTop = 5
+printTop = 10
 
 folder = str(Path(os.getcwd()))
 if folder[-5:] == 'model':
@@ -65,7 +70,7 @@ hyperparameters = {
     'lr_gen_model': 0.0001,
     'clipping': 1,
     'generalized': True,
-    'batch_size': 5,
+    'batch_size': 20,
     'xyu_samples_per_class': {'SUN': (200, 0, 400, 0),
                               'APY': (200, 0, 400, 0),
                               'CUB': (200, 0, 400, 0),
@@ -75,6 +80,7 @@ hyperparameters = {
     'epochs': 100,
     'loss': 'l2',
     'margin_loss': 8,
+    'weight_loss': 0.7,
     'auxiliary_data_source' : 'attributes',
     'attr': 'bert',
     'lr_cls': 0.001,
@@ -232,17 +238,16 @@ else:
     print(model)
     
     print(os.path.join(project_directory, 'model','CADA_trained_Triplet_State.pth.tar'))
-    saved_state = torch.load('CADA_trained.pth.tar')
+    saved_state = torch.load('CADA_trained_Triplet_State.pth.tar')
     model.load_state_dict(saved_state['state_dict'])
-    for d in model.all_data_sources_without_duplicates:
+    for d in model.all_data_sources:
         model.encoder[d].load_state_dict(saved_state['encoder'][d])
         model.decoder[d].load_state_dict(saved_state['decoder'][d])
     
     model.fc_ft.load_state_dict(saved_state['fc_ft'])
-    model.fc_ft.load_state_dict(saved_state['fc_at'])
-    model.fc_ft.load_state_dict(saved_state['ft_bn'])
-    model.fc_ft.load_state_dict(saved_state['at_bn'])
-    
+    model.fc_at.load_state_dict(saved_state['fc_at'])
+    model.ft_bn.load_state_dict(saved_state['ft_bn'])
+    model.at_bn.load_state_dict(saved_state['at_bn'])
     print(model)
     
     ev = Evaluate()
@@ -254,6 +259,9 @@ else:
     
     model.generate_gallery()
     
+    np.save('im_gallery.npy', model.gallery_imgs_z.clone().cpu().detach())
+    np.save('att_gallery.npy', model.gallery_attrs_z.clone().cpu().detach())
+    
     metricsI, metricsT = model.retrieval()
     
     #Printar metrics
@@ -261,15 +269,46 @@ else:
     print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
     print('Evaluation Metrics for caption retrieval')
     print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
-
+    
+    model.eval()
+    
     if evalR == False:  
                 
         ev.evalI2T(model, im, im_id)
         ev.evalT2I(model, caption, sent_id)
     
     else: 
-        ev.evalRetrieval(model, printTop)
-    
+        if classes == False:
+            model.generate_gallery()
+            
+            train_samples = np.vstack((model.gallery_imgs_z.clone().cpu().detach(),model.gallery_attrs_z.clone().cpu().detach()))
+            tsne = TSNE(n_components = 2)
+        
+            embedded = tsne.fit_transform(train_samples)
+        
+            ev.evalRetrieval(model, embedded, printTop)
+            #ev.tSNEretrieval(model,printTop)
+            #ev.distsSpace(model)
+            #ev.captionRetrieval(model)
+            
+            
+            #Repetir cada imatge 5 cops
+            imgs_gal = model.gallery_imgs_z
+            imgs = np.repeat(imgs_gal.detach().numpy(), repeats = 5, axis = 0)
+            
+            imgs_gal_vars = model.gallery_vars_im
+            imgs_vars = np.repeat(imgs_gal_vars.detach().numpy(), repeats = 5, axis = 0)
+                        
+            #metricsI = ev.t2i(imgs, model.gallery_attrs_z.detach().numpy(), embedded)
+            #metricsT = ev.i2t(imgs, model.gallery_attrs_z.detach().numpy(), embedded, model)
+            '''
+            print('Evaluation Metrics for image retrieval')
+            print("R@1: {}, R@5: {}, R@10: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4]))
+            print('Evaluation Metrics for caption retrieval')
+            print("R@1: {}, R@5: {}, R@10: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4]))
+            '''
+        else:
+            ev.evalRetrievalClass(model, 'man', printTop)
     
     
     

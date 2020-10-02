@@ -27,6 +27,8 @@ from vaemodelTriplet import Model
 import matplotlib.pyplot as plt
 from matplotlib.pyplot import imshow
 
+from sklearn.preprocessing import normalize
+
 class Identity(nn.Module):
     def __init__(self):
         super(Identity, self).__init__()
@@ -34,8 +36,7 @@ class Identity(nn.Module):
     def forward(self, x):
         return x
 
-class Evaluate:   
-    
+class Evaluate:      
     
 
     def selectEvalItems(self,path):
@@ -154,117 +155,264 @@ class Evaluate:
             
             #print('Image plotted')
     
-    def evalRetrieval(self, model, printTop = 1):
-        
+    def tSNEretrieval(self, model, printTop = 1):
         model.eval()
+        
+        test_imgs = []
+        with open(os.path.join(self.path,'dataset.json')) as f:
+            json_data = json.loads(f.read())
+            image_list = json_data['images']
+            
+            for images in image_list:
+                if images['split'] == 'test':
+                    test_imgs.append(images['filename'])
+                    
+                
+        
+        print('here i am')
         
         ranksI = np.zeros((1,model.dataset.ntest))
         ranksT = np.zeros((1,5*model.dataset.ntest))    
         
         txt = 'Retrieval-'+str(printTop)+'.txt'
         
+        train_samples = np.vstack((model.gallery_imgs_z.clone().cpu().detach(),model.gallery_attrs_z.clone().cpu().detach()))
+        tsne = TSNE(n_components = 2)
+        
+        embedded = tsne.fit_transform(train_samples)
+        
+        z_imgs_embedded = embedded[0:1000,:]
+        z_attrs_embedded = embedded[1000:6000,:]
+        
+        tx_imgs = z_imgs_embedded[:,0]
+        ty_imgs = z_imgs_embedded[:,1]
+        tx_attrs = z_attrs_embedded[:,0]
+        ty_attrs = z_attrs_embedded[:,1]
+        
+        minx = min(np.min(tx_imgs), np.min(tx_attrs))
+        maxx = max(np.max(tx_imgs), np.max(tx_attrs))
+        miny = min(np.min(ty_imgs), np.min(ty_attrs))
+        maxy = max(np.max(ty_imgs), np.max(ty_attrs))
+        
+        tx_imgs = (tx_imgs-minx)/(maxx-minx)
+        ty_imgs = (ty_imgs-miny)/(maxy-miny)
+        tx_attrs =(tx_attrs-minx)/(maxx-minx)
+        ty_attrs =(ty_attrs-miny)/(maxy-miny)
+        
+               
         with open(txt, 'w') as txtfile:
             
+            indixI = []
+            indixT = []
+            
+            ins = []
             for i in range(0, model.dataset.ntest):
                 
                 mu_img = model.gallery_imgs_z[i,:].unsqueeze(0)  
                 mu_att = model.gallery_attrs_z[5*i:5*i + 5,:]
                 
-                #distancesI = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
-                distancesI = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
-                #distancesT = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_attrs_z.cpu().detach().numpy(), 'cosine')
-                distancesT = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
+                #distancesI = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy())
+                distancesI = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy())
+                #distancesT = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_attrs_z.cpu().detach().numpy())
+                distancesT = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy())
+                
+                print(distancesI[0,:])
                 
                 indicesI = np.argsort(distancesI)
                 indicesT = np.argsort(distancesT)
                 
-                '''
-                for z in range(0,5):
-                    if len(indicesT[z] == i) != 0:
-                        ranksT[:,(5*i) + z] = np.where(indicesT[z] == i)[0][0]
-                    else:
-                        ranksT[:,(5*i) + z] = 1000
-                    
-                    if ranksT[:,(5*i) + z] < printTop:
-                        
-                        que = 'QUERY'+ str((5*i)+z)
-                        txtfile.write(que)
-                        
-                        captions = self.bbdd[int(i)]['sentences']
-                        caption = captions[z]
-                        
-                        txtfile.write(caption['raw'])
-                        
-                        for j in range(0,10):
-                            im = self.bbdd[indicesT[z][j]]['filename']
-                        
-                            img = Image.open(os.path.join(self.path, 'images', im))   
-                        
-                            fn = 'r'+str(j)+'-'+str((5*i)+z)+'.png'
-                            txtfile.write(fn)
-                            img.save(fn)
-                        
+                print(indicesI[0,:])
+                
+                print('Ordered distances')
+                
+                print(distancesI[0,indicesI[0,:]])
                 
                 
-                if len(np.where((indicesI >= 5*i) & (indicesI <= ((5*i) + 4)))) != 0:
-                    ranksI[:,i] = np.where((indicesI >= 5*i) & (indicesI <= ((5*i) + 4)))[0][0]
-                else:
-                    ranksI[:,i] = 1000
+                for j in range(0,indicesI.shape[0]):
+                    full_image = Image.new('RGBA', (4000, 3000))
                     
-                if ranksI[:,i] < printTop:
-                    im = self.bbdd[int(i)]['filename']
-                    
-                    img = Image.open(os.path.join(self.path, 'images', im))               
-                    
-                    
-                    fn = 'query'+str(i)+'.png'
-                    txtfile.write(fn)
-                    #print(fn)
-                    img.save(fn)
-                    
-                    for j in range(0,10):
-                        captions = self.bbdd[indicesI[j] // 5]['sentences']
-                        caption = captions[indicesI[j]%5]
+                    for k in range(0,20):
+                        tile = Image.open(os.path.join(self.path,'images', test_imgs[indicesI[j,k]])).convert('RGB')
                         
-                        txtfile.write(caption['raw'])
-                        #print(caption['raw'])
+                        rs = max(1,tile.width/100, tile.height/100)
+                        tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
+                
+                        full_image.paste(tile, (int((4000 - 100)*tx_imgs[indicesI[j,k]]), int((3000 - 100)*ty_imgs[indicesI[j,k]])), mask = tile.convert('RGBA'))
+                        
+                    filename = 'tsne-Euclid-Retrieval20-Image'+str(i)+'-'+str(j)+'.png'
+                    full_image.save(filename)
+                
+                
+                
+                
+                
+    def evalRetrieval(self, model, embedded, printTop = 1):
+        
+        model.eval()
+        
+        test_imgs = []
+        test_sents = []
+        with open(os.path.join(self.path,'dataset.json')) as f:
+            json_data = json.loads(f.read())
+            image_list = json_data['images']
+            
+            for images in image_list:
+                if images['split'] == 'test':
+                    test_imgs.append(images['filename'])
+                    sents = images['sentids']
+                    for sent in sents:
+                        test_sents.append(sent)
+                    
+        '''
+        with open('filenames.txt', 'a+') as f:
+            for filename in test_imgs:
+                string = filename + '\n'
+                f.write(string)
+        
+        with open('sentids.txt', 'a+') as f:
+            for sent in test_sents:
+                string = str(sent) + '\n'
+                f.write(string)
+        '''    
+        ranksI = np.zeros((1,5*model.dataset.ntest))
+        ranksT = np.zeros((1,model.dataset.ntest)) 
+        
+               
+        z_imgs_embedded = embedded[0:1000,:]
+        z_attrs_embedded = embedded[1000:6000,:]
+        
+        tx_imgs = z_imgs_embedded[:,0]
+        ty_imgs = z_imgs_embedded[:,1]
+        tx_attrs = z_attrs_embedded[:,0]
+        ty_attrs = z_attrs_embedded[:,1]
+        
+        minx = min(np.min(tx_imgs), np.min(tx_attrs))
+        maxx = max(np.max(tx_imgs), np.max(tx_attrs))
+        miny = min(np.min(ty_imgs), np.min(ty_attrs))
+        maxy = max(np.max(ty_imgs), np.max(ty_attrs))
+        
+        tx_imgs = (tx_imgs-minx)/(maxx-minx)
+        ty_imgs = (ty_imgs-miny)/(maxy-miny)
+        tx_attrs =(tx_attrs-minx)/(maxx-minx)
+        ty_attrs =(ty_attrs-miny)/(maxy-miny)
+        
+        txt = 'RetrievalTSNE-previouscode-'+str(printTop)+'.txt'
+        
+        with open(txt, 'w') as txtfile:
+            
+            indixI = []
+            indixT = []
+            
+            ins = []
+            for i in range(0, model.dataset.ntest):
                 '''
+                mu_img = model.gallery_imgs_z[i,:].unsqueeze(0)  
+                mu_att = model.gallery_attrs_z[5*i:5*i + 5,:]
+                
+                distancesI = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
+                #distancesI = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
+                distancesT = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_attrs_z.cpu().detach().numpy(), 'cosine')
+                #distancesT = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
                 '''
+                
+                embd_img = np.zeros((1,2))
+                embd_img[:,0] = tx_imgs[i]
+                embd_img[:,1] = ty_imgs[i]
+                
+                embd_att = np.zeros((5,2))
+                
+                for ii in range(0,len(embd_att)):
+                    embd_att[ii,0] = tx_attrs[5*i + ii]
+                    embd_att[ii,1] = ty_attrs[5*i + ii]
+                    
+                gal_img = np.zeros((len(tx_imgs),2))
+                gal_attrs = np.zeros((len(tx_attrs), 2))
+                
+                for ii in range(0, len(gal_img)):
+                    gal_img[ii,0] = tx_imgs[ii]
+                    gal_img[ii,1] = ty_imgs[ii]
+                    
+                    for iii in range(0,5):
+                        gal_attrs[5*ii + iii, 0] = tx_attrs[5*ii + iii]
+                        gal_attrs[5*ii + iii, 1] = ty_attrs[5*ii + iii]
+                                        
+                
+                distancesI = distance.cdist(embd_att, gal_img, metric = 'cosine')
+                distancesT = distance.cdist(embd_img, gal_attrs, metric = 'cosine')
+                
+                indicesI = np.argsort(distancesI)
+                indicesT = np.argsort(distancesT[0,:])
+                
+                indixI.append(indicesI)
+                indixT.append(indicesT)
+                
+                ins.append(i)
+                
+                
+                
                 for z in range(0,5):
                     if len(indicesI[z] == i) != 0:
-                        ranksT[:,(5*i) + z] = np.where(indicesT[z] == i)[0][0]
+                        ranksI[:,(5*i) + z] = np.where(indicesI[z] == i)[0][0]
                     else:
-                        ranksT[:,(5*i) + z] = 1000
-                    
-                    if ranksT[:,(5*i) + z] < printTop:
+                        ranksI[:,(5*i) + z] = 1000
                         
-                        que = 'QUERY'+ str((5*i)+z)
+                    full_image = Image.new('RGBA', (4000, 3000))
+                    
+                    for k in range(0,20):
+                        tile = Image.open(os.path.join(self.path,'images', test_imgs[indicesI[z,k]])).convert('RGB')
+                        
+                        rs = max(1,tile.width/100, tile.height/100)
+                        tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
+                
+                        full_image.paste(tile, (int((4000 - 100)*tx_imgs[indicesI[z,k]]), int((3000 - 100)*ty_imgs[indicesI[z,k]])), mask = tile.convert('RGBA'))
+                        
+                    filename = 'tsne-prevcode-RetrievalTSNE20-Caption'+str(i)+'-'+str(z)+'.png'
+                    print(filename)
+                    full_image.save(filename)                    
+                    
+                    if ranksI[:,(5*i) + z] < printTop:
+                        
+                        que = 'QUERY'+ str((5*i)+z)+'\n'
                         txtfile.write(que)
                         
                         captions = self.bbdd[int(i)]['sentences']
                         caption = captions[z]
-                        
-                        txtfile.write(caption['raw'])
+                        string = caption['raw'] + '\n'
+                        txtfile.write(string)
                         
                         for j in range(0,10):
-                            im = self.bbdd[indicesT[z][j]]['filename']
+                            im = self.bbdd[indicesI[z][j]]['filename']
                         
                             img = Image.open(os.path.join(self.path, 'images', im))   
                         
-                            fn = 'r'+str(j)+'-'+str((5*i)+z)+'.png'
-                            txtfile.write(fn)
+                            fn = im
+                            fn_str = fn + '\n'
+                            txtfile.write(fn_str)
                             img.save(fn)
-                '''       
+                        
+                        txtfile.write('\n')
+                        
                 
-                if len(indicesI == i) != 0:
-                    ranksI[:,i] = np.where(indicesI == i)[0][0]
-                else:
-                    ranksI[:,i] = 1000
                 
                 if len(np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))) != 0:
-                    ranksT[:,i] = np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))[1][0]
+                    ranksT[:,i] = np.where((indicesT >= 5*i) & (indicesT <= ((5*i) + 4)))[0][0]
                 else:
                     ranksT[:,i] = 1000
+                
+                full_image = Image.new('RGBA', (4000, 3000))
+                
+                
+                for k in range(0,20):
+                    tile = Image.open(os.path.join(self.path,'images', test_imgs[int(indicesT[k]//5)])).convert('RGB')
+                        
+                    rs = max(1,tile.width/100, tile.height/100)
+                    tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
+                
+                    full_image.paste(tile, (int((4000 - 100)*tx_imgs[int(indicesT[k]//5)]), int((3000 - 100)*ty_imgs[int(indicesT[k]//5)])), mask = tile.convert('RGBA'))
+                        
+                filename = 'tsne-prevcode-RetrievalTSNE20-Image'+str(i)+'.png'
+                print(filename)
+                full_image.save(filename)              
                     
                 if ranksT[:,i] < printTop:
                     im = self.bbdd[int(i)]['filename']
@@ -272,19 +420,25 @@ class Evaluate:
                     img = Image.open(os.path.join(self.path, 'images', im))               
                     
                     
-                    fn = 'query'+str(i)+'.png'
-                    txtfile.write(fn)
+                    fn = im
+                    fn_str = fn + '\n'
+                    txtfile.write(fn_str)
                     #print(fn)
                     img.save(fn)
-                    '''
+                    
                     for j in range(0,10):
-                        captions = self.bbdd[indicesT[j] // 5]['sentences']
-                        caption = captions[indicesT[j]%5]
+                        captions = self.bbdd[int(indicesT[j]//5)]['sentences']
                         
-                        txtfile.write(caption['raw'])
+                        
+                        caption = captions[int(indicesT[j]%5)]
+                        
+                        string = caption['raw'] +'\n'
+                        txtfile.write(string)
                         #print(caption['raw'])
-                    '''
-        
+                    
+                    txtfile.write('\n')
+                
+                
         r1im = 100.0 * len(np.where(ranksI < 1)[1]) / len(ranksI[0,:])
         r5im = 100.0 * len(np.where(ranksI < 5)[1]) / len(ranksI[0,:])
         r10im = 100.0 * len(np.where(ranksI < 10)[1]) / len(ranksI[0,:])
@@ -297,6 +451,7 @@ class Evaluate:
         r50t = 100.0 * len(np.where(ranksT < 50)[1]) / len(ranksT[0,:])
         r100t = 100.0 * len(np.where(ranksT < 100)[1]) / len(ranksT[0,:])
         
+               
         medrI = np.floor(np.median(ranksI)) + 1
         meanrI = ranksI.mean() + 1
         
@@ -311,7 +466,7 @@ class Evaluate:
         print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
         print('Evaluation Metrics for caption retrieval')
         print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
-       
+        
     
         txtfile.close()
         
@@ -324,12 +479,18 @@ class Evaluate:
                 if images['split'] == 'test':
                     test_imgs.append(images['filename'])
         
+        '''
+        train_samples = np.vstack((model.gallery_imgs_z.clone().cpu().detach(),model.gallery_attrs_z.clone().cpu().detach()))
         tsne = TSNE(n_components = 2)
-        tsne = tsne.fit(model.gallery_imgs_z.clone().cpu().detach())
-        tsne = tsne.fit(model.gallery_attrs_z.clone().cpu().detach())
+        #tsne = tsne.fit(model.gallery_imgs_z.clone().cpu().detach())
+        #tsne = tsne.fit(model.gallery_attrs_z.clone().cpu().detach())
         
-        z_imgs_embedded = tsne.fit_transform(model.gallery_imgs_z.clone().cpu().detach())
-        z_attrs_embedded = tsne.fit_transform(model.gallery_attrs_z.clone().cpu().detach())
+        #z_imgs_embedded = tsne.fit_transform(model.gallery_imgs_z.clone().cpu().detach())
+        embedded = tsne.fit_transform(train_samples)
+        
+        z_imgs_embedded = embedded[0:1000,:]
+        z_attrs_embedded = embedded[1000:6000,:]
+        
         
         tx_imgs = z_imgs_embedded[:,0]
         ty_imgs = z_imgs_embedded[:,1]
@@ -341,17 +502,20 @@ class Evaluate:
         miny = min(np.min(ty_imgs), np.min(ty_attrs))
         maxy = max(np.max(ty_imgs), np.max(ty_attrs))
         
-        '''
+        
         tx_imgs = (tx_imgs-np.min(tx_imgs))/(np.max(tx_imgs)-np.min(tx_imgs))
         ty_imgs = (ty_imgs-np.min(ty_imgs))/(np.max(ty_imgs)-np.min(ty_imgs))
         tx_attrs =(tx_attrs-np.min(tx_attrs))/(np.max(tx_attrs)-np.min(tx_attrs))
         ty_attrs =(ty_attrs-np.min(ty_attrs))/(np.max(ty_attrs)-np.min(ty_attrs))
-        '''
+        
         
         tx_imgs = (tx_imgs-minx)/(maxx-minx)
         ty_imgs = (ty_imgs-miny)/(maxy-miny)
         tx_attrs =(tx_attrs-minx)/(maxx-minx)
         ty_attrs =(ty_attrs-miny)/(maxy-miny)
+        '''
+        
+        
         
         full_image = Image.new('RGBA', (4000, 3000))
         full_captions = Image.new('RGBA', (4000,3000))
@@ -359,14 +523,12 @@ class Evaluate:
         for z in range(0, model.dataset.ntest):
                 
             tile = Image.open(os.path.join(self.path,'images', test_imgs[z])).convert('RGB')
-                
-            imshow(tile)
-                
+                            
             rs = max(1,tile.width/100, tile.height/100)
             tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
                 
             full_image.paste(tile, (int((4000 - 100)*tx_imgs[z]), int((3000 - 100)*ty_imgs[z])), mask = tile.convert('RGBA'))
-            
+            #full_captions.paste(tile,(int((4000-100)*tx_imgs[z]), int((3000-100)*ty_imgs[z])), mask = tile.convert('RGBA'))
             for i in range(0,5):
                 caption_x = tx_attrs[5*z+i]
                 caption_y = ty_attrs[5*z+i]
@@ -374,13 +536,106 @@ class Evaluate:
                 full_captions.paste(tile, (int((4000-100)*caption_x), int((3000-100)*caption_y)), mask = tile.convert('RGBA'))                           
                 
                   
-        filename = 'Image-t-sne-plot-Retrieval-imagesNorm-fit2.png'
+        filename = 'Image-t-sne-plot-prevcode-images.png'
         full_image.save(filename)
         plt.clf()
         
-        filename = 'Image-t-sne-plot-Retrieval-captionsNorm-fit2.png'
+        filename = 'Image-t-sne-plot-prevcode-captions.png'
         full_captions.save(filename)
         plt.clf
+            
+    
+    def captionRetrieval(self,model):
+        
+        model.eval()
+        
+        test_imgs = []
+        test_sents = []
+        test_s = []
+        with open(os.path.join(self.path,'dataset.json')) as f:
+            json_data = json.loads(f.read())
+            image_list = json_data['images']
+            
+            for images in image_list:
+                if images['split'] == 'test':
+                    test_imgs.append(images['filename'])
+                    sents = images['sentids']
+                    test_sents.append(sents)
+                    
+                    for sent in sents:
+                        test_s.append(int(sent))
+        
+        ranked = []
+        ranks = np.zeros((1,5000))
+        for i in range(0, len(test_imgs)):
+            mu_att = model.gallery_attrs_z[5*i:5*i + 5,:]
+            
+            for j in range(0,len(test_sents[i])):
+                que_att = mu_att[j:j+1,:]
+                
+                distancesT = distance.cdist(que_att.cpu().detach().numpy(), model.gallery_attrs_z.cpu().detach().numpy(), 'cosine')
+                indicesT = np.argsort(distancesT)
+                
+                sentis = test_sents[i].copy()
+                sent = sentis.copy()
+                del sent[j:j+1]
+                
+                ranks[:,(5*i)+j] = 5000
+                
+                
+                for z in sent: 
+                    ks = 0
+                    for s in test_s:
+                        if s == z:
+                            idxs = ks
+                        
+                        ks += 1
+                    
+                    print(idxs)
+                    if len(np.where(indicesT[0,:] == idxs)[0]) != 0:
+                        ranking = np.where(indicesT[0,:] == idxs)[0][0] 
+                        ranking -= 1
+                        ranked.append(ranking)
+                    else:
+                        ranking = 5000
+                        ranking -= 1
+                        ranked.append(ranking)
+                    
+                    if ranking < ranks[:,(5*i)+j]:
+                        ranks[:,(5*i)+j] = ranking
+                
+                
+        r1im = 100.0 * len(np.where(ranks < 1)[1]) / len(ranks[0,:])
+        r5im = 100.0 * len(np.where(ranks< 5)[1]) / len(ranks[0,:])
+        r10im = 100.0 * len(np.where(ranks < 10)[1]) / len(ranks[0,:])
+        r50im = 100.0 * len(np.where(ranks < 50)[1]) / len(ranks[0,:])
+        r100im = 100.0 * len(np.where(ranks < 100)[1]) / len(ranks[0,:])
+        
+        medrI = np.floor(np.median(ranks)) + 1
+        meanrI = ranks.mean() + 1
+        
+        metricsI = [r1im, r5im, r10im, r50im, r100im, medrI, meanrI]
+        
+        print('Evaluation Metrics for caption-to-caption retrieval')
+        print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
+        
+        ranked = np.array(ranked)
+        
+        r1im = 100.0 * len(np.where(ranked < 1)[0]) / len(ranked)
+        r5im = 100.0 * len(np.where(ranked< 5)[0]) / len(ranked)
+        r10im = 100.0 * len(np.where(ranked < 10)[0]) / len(ranked)
+        r50im = 100.0 * len(np.where(ranked < 50)[0]) / len(ranked)
+        r100im = 100.0 * len(np.where(ranked < 100)[0]) / len(ranked)
+        
+        medrI = np.floor(np.median(ranked)) + 1
+        meanrI = ranked.mean() + 1
+        
+        metricsI = [r1im, r5im, r10im, r50im, r100im, medrI, meanrI]
+        
+        print('Evaluation Metrics for caption-to-caption retrieval (one positive)')
+        print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsI[0], metricsI[1], metricsI[2], metricsI[3], metricsI[4], metricsI[5], metricsI[6]))
+                       
+        
         
     #Seleccionar els items de la classe en concret.
     #Obtenir resultats quantitatius i qualitatius.
@@ -526,7 +781,7 @@ class Evaluate:
                             29629, 29636, 29791, 30283, 30384, 30456, 30480, 30503, 30542, 30557, 30619, 30652,\
                             30665, 30674, 30893, 30942]
                 
-        print(cluster_idxs)
+        print(len(cluster_idxs))
         
         model.eval()
         
@@ -633,8 +888,372 @@ class Evaluate:
         print("R@1: {}, R@5: {}, R@10: {}, R@50: {}, R@100: {}, MEDR: {}, MEANR: {}".format(metricsT[0], metricsT[1], metricsT[2], metricsT[3], metricsT[4], metricsT[5], metricsT[6]))
         
         
+    def distsSpace(self, model):
+        
+        cluster_idxs = [34,1072,1723,1833,2124,3008,3097,4343,4510,5160,5171,5240,5330,5343,5441,5724,5867,5947,5970,6078,6250,6334,7739,7750, \
+                            7912,8084,8185,8225,8486,8654,8766,8872,8940,9039,9736,10577,11234,11239,11423,11618,11747,12356,12402,12927,12994,13135,13276,13516,\
+                                13785, 13990, 14332, 14434, 14736, 14832, 14989, 15020, 15186, 15650, 17822, 17823,18499, 18979, 18998, 21900, 22317, 22419, 22548,\
+                                22594, 23128, 23280, 24846, 27391, 29632, 30660]
+        
+        folder = str(Path(os.getcwd()))
+        if folder[-5:] == 'model':
+            project_directory = Path(os.getcwd()).parent
+        else:
+            project_directory = folder
+        
+        path = os.path.join(project_directory,'data','flickr30k')
+        
+        self.test_imgs = []
+        attr_filename = os.path.join(path,'dataset.json')
+        with open(attr_filename) as f:
+            json_data = json.loads(f.read())
+            image_list = json_data['images']
+            
+            for images in image_list:
+                if images['split'] == 'test':
+                    self.test_imgs.append(images['imgid'])
+                    
+        z_imgs = []
+        z_attrs = []
+        
+        j = 0
+        for idx in cluster_idxs:
+                
+            i = self.test_imgs.index(idx)
+            mu_img = model.gallery_imgs_z[i,:].unsqueeze(0)  
+            mu_att = model.gallery_attrs_z[5*i:5*i + 5,:]
+            
+            if j == 0:
+                z_imgs = mu_img.cpu()
+                z_attrs = mu_att.cpu()
+            else:
+                z_imgs = torch.cat((z_imgs.cpu(),mu_img.cpu()), dim = 0).cpu()
+                z_attrs = torch.cat((z_attrs.cpu(), mu_att.cpu()), dim = 0).cpu()
+            
+            
+            j += 1
+        
+        print(z_imgs[0:1,:].shape)
+        print(z_attrs[0:1,:].shape)
+        distancesI = distance.cdist(z_imgs[0:1,:].detach().numpy(), z_imgs.detach().numpy(), 'cosine')
+        distancesT = distance.cdist(z_attrs[0:1,:].detach().numpy(), z_attrs.detach().numpy(), 'cosine')
+        
+        print(distancesI[0,:])
+        print(distancesT[0,:])
+        
+    
+    def i2t(self,images, captions, embedded, model, npts=None, measure='cosine', return_ranks=False):
+        """
+        Images->Text (Image Annotation)
+        Images: (5N, K) matrix of images
+        Captions: (5N, K) matrix of captions
+        """
+        
+        printTop = 10
+        
+        test_imgs = []
+        with open(os.path.join(self.path,'dataset.json')) as f:
+            json_data = json.loads(f.read())
+            image_list = json_data['images']
+            
+            for imag in image_list:
+                if imag['split'] == 'test':
+                    test_imgs.append(imag['filename'])
+        
+        z_imgs_embedded = embedded[0:1000,:]
+        z_attrs_embedded = embedded[1000:6000,:]
+        
+        tx_imgs = z_imgs_embedded[:,0]
+        ty_imgs = z_imgs_embedded[:,1]
+        tx_attrs = z_attrs_embedded[:,0]
+        ty_attrs = z_attrs_embedded[:,1]
+        
+        minx = min(np.min(tx_imgs), np.min(tx_attrs))
+        maxx = max(np.max(tx_imgs), np.max(tx_attrs))
+        miny = min(np.min(ty_imgs), np.min(ty_attrs))
+        maxy = max(np.max(ty_imgs), np.max(ty_attrs))
+        
+        tx_imgs = (tx_imgs-minx)/(maxx-minx)
+        ty_imgs = (ty_imgs-miny)/(maxy-miny)
+        tx_attrs =(tx_attrs-minx)/(maxx-minx)
+        ty_attrs =(ty_attrs-miny)/(maxy-miny)
+        
+        images = normalize(images, axis = 1, norm = 'l2')
+        #im_vars = normalize(im_vars, axis = 1, norm = 'l2')
+        captions = normalize(captions, axis = 1, norm = 'l2')
+        #captions_vars = normalize(captions_vars,axis = 1, norm = 'l2')
+        
+        def order_sim(im, s):
+            """Order embeddings similarity measure $max(0, s-im)$
+            """
+            YmX = (s.unsqueeze(1).expand(s.size(0), im.size(0), s.size(1))
+                   - im.unsqueeze(0).expand(s.size(0), im.size(0), s.size(1)))
+            score = -YmX.clamp(min=0).pow(2).sum(2).sqrt().t()
+            return score
+        
+        def kl_divergence(p_mu, p_var, q_mu, q_var):
+            return (0.5 * torch.sum(1 + p_var - p_mu.pow(2) - p_var.exp()))+ (0.5 * torch.sum(1 + q_var - q_mu.pow(2) - q_var.exp()))
+
+        if npts is None:
+            npts = int(images.shape[0] / 5)
+            
+        
+        index_list = []
+    
+        ranks = np.zeros(npts)
+        top1 = np.zeros(npts)
+        
+        txt = 'Retrieval-newcode-I2T-'+str(printTop)+'.txt'
+        
+        with open(txt, 'w') as txtfile:
+            for index in range(npts):
+                            
+                # Get query image
+                im = images[5 * index].reshape(1, images.shape[1])
+                #im_var = im_vars[5 * index].reshape(1,images.shape[1])
+        
+                # Compute scores
+                if measure == 'order':
+                    bs = 100
+                    if index % bs == 0:
+                        mx = min(images.shape[0], 5 * (index + bs))
+                        im2 = images[5 * index:mx:5]
+                        d2 = order_sim(torch.Tensor(im2).cuda(),
+                                       torch.Tensor(captions).cuda())
+                        d2 = d2.cpu().numpy()
+                    d = d2[index % bs]
+                else:
+                    d = np.dot(im, captions.T).flatten()
+                    #for i in range(0, len(d)):
+                    #    d[i] = kl_divergence(im, im_var, captions[i,:], captions_vars[i,:])
+                    
+                inds = np.argsort(d)[::-1]
+                index_list.append(inds[0])
+                
+                
+                full_image = Image.new('RGBA', (4000, 3000))
+                        
+                for k in range(0,20):
+                    tile = Image.open(os.path.join(self.path,'images', test_imgs[int(inds[k]//5)])).convert('RGB')
+                            
+                    rs = max(1,tile.width/100, tile.height/100)
+                    tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
+                    
+                    full_image.paste(tile, (int((4000 - 100)*tx_imgs[int(inds[k]//5)]), int((3000 - 100)*ty_imgs[int(inds[k]//5)])), mask = tile.convert('RGBA'))
+                            
+                filename = 'tsne-newcode-cosine-Retrieval20-Image'+str(index)+'.png'
+                full_image.save(filename)
+                
+        
+                # Score
+                rank = 1e20
+                for i in range(5 * index, 5 * index + 5, 1):
+                    tmp = np.where(inds == i)[0][0]
+                    if tmp < rank:
+                        rank = tmp
+                ranks[index] = rank
+                top1[index] = inds[0]
+                
+                if rank < 10:
+                    im = self.bbdd[int(index)]['filename']
+                    
+                    img = Image.open(os.path.join(self.path, 'images', im))               
+                    
+                    
+                    fn = im
+                    fn_str = fn + '\n'
+                    txtfile.write(fn_str)
+                    #print(fn)
+                    img.save(fn)
+                    
+                    for j in range(0,10):
+                        captis = self.bbdd[int(inds[j]//5)]['sentences']
+                        
+                        
+                        caption = captis[int(inds[j]%5)]
+                        
+                        string = caption['raw'] +'\n'
+                        txtfile.write(string)
+                        #print(caption['raw'])
+                    
+                    txtfile.write('\n')
+    
+        # Compute metrics
+        r1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+        r5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+        r10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+        medr = np.floor(np.median(ranks)) + 1
+        meanr = ranks.mean() + 1
+        
+        metrics = [r1, r5, r10, medr, meanr]
         
         
         
+        full_image = Image.new('RGBA', (4000, 3000))
+        full_captions = Image.new('RGBA', (4000,3000))
         
- 
+        for z in range(0, model.dataset.ntest):
+                
+            tile = Image.open(os.path.join(self.path,'images', test_imgs[z])).convert('RGB')
+                            
+            rs = max(1,tile.width/100, tile.height/100)
+            tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
+                
+            full_image.paste(tile, (int((4000 - 100)*tx_imgs[z]), int((3000 - 100)*ty_imgs[z])), mask = tile.convert('RGBA'))
+            #full_captions.paste(tile,(int((4000-100)*tx_imgs[z]), int((3000-100)*ty_imgs[z])), mask = tile.convert('RGBA'))
+            for i in range(0,5):
+                caption_x = tx_attrs[5*z+i]
+                caption_y = ty_attrs[5*z+i]
+
+                full_captions.paste(tile, (int((4000-100)*caption_x), int((3000-100)*caption_y)), mask = tile.convert('RGBA'))                           
+                
+                  
+        filename = 'Image-t-sne-cosine-plot-newcode-images.png'
+        full_image.save(filename)
+        plt.clf()
+        
+        filename = 'Image-t-sne-cosine-plot-newcode-captions.png'
+        full_captions.save(filename)
+        plt.clf
+        
+        return metrics
+    
+    def t2i(self,images, captions, embedded, npts=None, measure='cosine', return_ranks=False):
+        """
+        Text->Images (Image Search)
+        Images: (5N, K) matrix of images
+        Captions: (5N, K) matrix of captions
+        """
+        
+        printTop = 10
+        
+        test_imgs = []
+        with open(os.path.join(self.path,'dataset.json')) as f:
+            json_data = json.loads(f.read())
+            image_list = json_data['images']
+            
+            for imag in image_list:
+                if imag['split'] == 'test':
+                    test_imgs.append(imag['filename'])
+        
+        
+        z_imgs_embedded = embedded[0:1000,:]
+        z_attrs_embedded = embedded[1000:6000,:]
+        
+        tx_imgs = z_imgs_embedded[:,0]
+        ty_imgs = z_imgs_embedded[:,1]
+        tx_attrs = z_attrs_embedded[:,0]
+        ty_attrs = z_attrs_embedded[:,1]
+        
+        minx = min(np.min(tx_imgs), np.min(tx_attrs))
+        maxx = max(np.max(tx_imgs), np.max(tx_attrs))
+        miny = min(np.min(ty_imgs), np.min(ty_attrs))
+        maxy = max(np.max(ty_imgs), np.max(ty_attrs))
+        
+        tx_imgs = (tx_imgs-minx)/(maxx-minx)
+        ty_imgs = (ty_imgs-miny)/(maxy-miny)
+        tx_attrs =(tx_attrs-minx)/(maxx-minx)
+        ty_attrs =(ty_attrs-miny)/(maxy-miny)
+        
+        images = normalize(images, axis = 1, norm = 'l2')
+        captions = normalize(captions, axis = 1, norm = 'l2')
+        
+        def order_sim(im, s):
+            """Order embeddings similarity measure $max(0, s-im)$
+            """
+            YmX = (s.unsqueeze(1).expand(s.size(0), im.size(0), s.size(1))
+                   - im.unsqueeze(0).expand(s.size(0), im.size(0), s.size(1)))
+            score = -YmX.clamp(min=0).pow(2).sum(2).sqrt().t()
+            return score
+        
+        def kl_divergence(p_mu, p_var, q_mu, q_var):
+            return (0.5 * torch.sum(1 + p_var - p_mu.pow(2) - p_var.exp())) + (0.5 * torch.sum(1 + q_var - q_mu.pow(2) - q_var.exp()))
+
+        if npts is None:
+            npts = int(images.shape[0] / 5)
+        
+        ims = np.array([images[i] for i in range(0, len(images), 5)])
+    
+        ranks = np.zeros(5 * npts)
+        top1 = np.zeros(5 * npts)
+        
+        txt = 'Retrieval-newcode-T2I-'+str(printTop)+'.txt'
+        
+        with open(txt, 'w') as txtfile:
+            for index in range(npts):
+        
+                # Get query captions
+                queries = captions[5 * index:5 * index + 5]
+        
+                # Compute scores
+                if measure == 'order':
+                    bs = 100
+                    if 5 * index % bs == 0:
+                        mx = min(captions.shape[0], 5 * index + bs)
+                        q2 = captions[5 * index:mx]
+                        d2 = order_sim(torch.Tensor(ims).cuda(),
+                                       torch.Tensor(q2).cuda())
+                        d2 = d2.cpu().numpy()
+        
+                    d = d2[:, (5 * index) % bs:(5 * index) % bs + 5].T
+                else:
+                    d = np.dot(queries, ims.T)
+                    #for i in range(0, len(d)):
+                    #    d[i] = kl_divergence(queries[int(i%5)], queries_vars[int(i%5)], images[i], im_vars[i])
+                     
+                inds = np.zeros(d.shape)
+                for i in range(len(inds)):
+                    inds[i] = np.argsort(d[i])[::-1]
+                    ranks[5 * index + i] = np.where(inds[i] == index)[0][0]
+                    top1[5 * index + i] = inds[i][0]
+                    
+                    full_image = Image.new('RGBA', (4000, 3000))
+                    
+                    for k in range(0,20):
+                        tile = Image.open(os.path.join(self.path,'images', test_imgs[int(inds[i][k])])).convert('RGB')
+                        
+                        rs = max(1,tile.width/100, tile.height/100)
+                        tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
+                
+                        full_image.paste(tile, (int((4000 - 100)*tx_imgs[int(inds[i][k])]), int((3000 - 100)*ty_imgs[int(inds[i][int(k)])])), mask = tile.convert('RGBA'))
+                        
+                    filename = 'tsne-newcode-cosine-Retrieval20-Caption'+str(index)+'-'+str(i)+'.png'
+                    full_image.save(filename)        
+                    
+                    if ranks[5*index + i] < 10:
+                        que = 'QUERY'+ str((5*index)+i)+'\n'
+                        txtfile.write(que)
+                                
+                        captis = self.bbdd[int(index)]['sentences']
+                        caption = captis[i]
+                        string = caption['raw'] + '\n'
+                        txtfile.write(string)
+                                
+                        for j in range(0,10):
+                            im = self.bbdd[int(inds[i][j]//5)]['filename']
+                                
+                            img = Image.open(os.path.join(self.path, 'images', im))   
+                                
+                            fn = im
+                            fn_str = fn + '\n'
+                            txtfile.write(fn_str)
+                            img.save(fn)
+                                
+                        txtfile.write('\n')
+        
+        # Compute metrics
+        r1 = 100.0 * len(np.where(ranks < 1)[0]) / len(ranks)
+        r5 = 100.0 * len(np.where(ranks < 5)[0]) / len(ranks)
+        r10 = 100.0 * len(np.where(ranks < 10)[0]) / len(ranks)
+        medr = np.floor(np.median(ranks)) + 1
+        meanr = ranks.mean() + 1
+        
+        metrics = [r1, r5, r10, medr, meanr]
+        return metrics
+                
+                
+                
+                
+            
+            
+     
