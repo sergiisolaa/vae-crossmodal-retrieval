@@ -296,6 +296,12 @@ class Evaluate:
         tx_attrs =(tx_attrs-minx)/(maxx-minx)
         ty_attrs =(ty_attrs-miny)/(maxy-miny)
         
+        tx_imgs = (4000-100)*tx_imgs
+        ty_imgs = (3000-100)*ty_imgs
+        tx_attrs = (4000-100) * tx_attrs
+        ty_attrs = (3000-100) * ty_attrs
+        
+        
         txt = 'RetrievalTSNE-previouscode-'+str(printTop)+'.txt'
         
         with open(txt, 'w') as txtfile:
@@ -305,7 +311,7 @@ class Evaluate:
             
             ins = []
             for i in range(0, model.dataset.ntest):
-                '''
+                
                 mu_img = model.gallery_imgs_z[i,:].unsqueeze(0)  
                 mu_att = model.gallery_attrs_z[5*i:5*i + 5,:]
                 
@@ -313,8 +319,8 @@ class Evaluate:
                 #distancesI = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
                 distancesT = distance.cdist(mu_img.cpu().detach().numpy(), model.gallery_attrs_z.cpu().detach().numpy(), 'cosine')
                 #distancesT = distance.cdist(mu_att.cpu().detach().numpy(), model.gallery_imgs_z.cpu().detach().numpy(), 'cosine')
-                '''
                 
+                '''
                 embd_img = np.zeros((1,2))
                 embd_img[:,0] = tx_imgs[i]
                 embd_img[:,1] = ty_imgs[i]
@@ -337,8 +343,9 @@ class Evaluate:
                         gal_attrs[5*ii + iii, 1] = ty_attrs[5*ii + iii]
                                         
                 
-                distancesI = distance.cdist(embd_att, gal_img, metric = 'cosine')
-                distancesT = distance.cdist(embd_img, gal_attrs, metric = 'cosine')
+                distancesI = distance.cdist(embd_att, gal_img)
+                distancesT = distance.cdist(embd_img, gal_attrs)
+                '''
                 
                 indicesI = np.argsort(distancesI)
                 indicesT = np.argsort(distancesT[0,:])
@@ -351,7 +358,7 @@ class Evaluate:
                 
                 
                 for z in range(0,5):
-                    if len(indicesI[z] == i) != 0:
+                    if len(np.where(indicesI[z] == i)[0]) != 0:
                         ranksI[:,(5*i) + z] = np.where(indicesI[z] == i)[0][0]
                     else:
                         ranksI[:,(5*i) + z] = 1000
@@ -364,7 +371,7 @@ class Evaluate:
                         rs = max(1,tile.width/100, tile.height/100)
                         tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
                 
-                        full_image.paste(tile, (int((4000 - 100)*tx_imgs[indicesI[z,k]]), int((3000 - 100)*ty_imgs[indicesI[z,k]])), mask = tile.convert('RGBA'))
+                        full_image.paste(tile, (int(tx_imgs[indicesI[z,k]]), int(ty_imgs[indicesI[z,k]])), mask = tile.convert('RGBA'))
                         
                     filename = 'tsne-prevcode-RetrievalTSNE20-Caption'+str(i)+'-'+str(z)+'.png'
                     print(filename)
@@ -408,7 +415,7 @@ class Evaluate:
                     rs = max(1,tile.width/100, tile.height/100)
                     tile = tile.resize((int(tile.width/rs), int(tile.height/rs)), Image.ANTIALIAS)
                 
-                    full_image.paste(tile, (int((4000 - 100)*tx_imgs[int(indicesT[k]//5)]), int((3000 - 100)*ty_imgs[int(indicesT[k]//5)])), mask = tile.convert('RGBA'))
+                    full_image.paste(tile, (int(tx_attrs[int(indicesT[k])]), int(ty_attrs[int(indicesT[k])])), mask = tile.convert('RGBA'))
                         
                 filename = 'tsne-prevcode-RetrievalTSNE20-Image'+str(i)+'.png'
                 print(filename)
